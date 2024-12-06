@@ -75,6 +75,7 @@ func (s *Server) HandleRequestBody(reqCtx *requestContext, req *extProcPb.Proces
 
 	reqCtx.model = llmReq.Model
 	reqCtx.targetPod = targetPod
+	reqCtx.resolvedTargetModel = llmReq.ResolvedTargetModel
 
 	// Insert "target-pod" to instruct Envoy to route requests to the specified target pod.
 	headers := []*configPb.HeaderValueOption{

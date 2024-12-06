@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthPb "google.golang.org/grpc/health/grpc_health_v1"
@@ -63,6 +65,8 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(klog.TODO())
+
+	http.Handle("/metrics", promhttp.Handler())
 
 	klog.Infof("Listening on %q", fmt.Sprintf(":%d", *port))
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))

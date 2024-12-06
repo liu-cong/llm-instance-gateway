@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"io"
+	"time"
 
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	envoyTypePb "github.com/envoyproxy/go-control-plane/envoy/type/v3"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	klog "k8s.io/klog/v2"
@@ -13,6 +15,38 @@ import (
 	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/backend"
 	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/scheduling"
 )
+
+var (
+	requestCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "requests_total",
+			Help: "Total number of HTTP requests made.",
+		},
+		[]string{"model", "targetModel", "status"},
+	)
+	requestLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "request_duration_seconds",
+			Help:    "Histogram of the HTTP request latencies in seconds.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"model", "targetModel"},
+	)
+	tokenLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "per_output_duration_seconds",
+			Help:    "Histogram of the per output latencies in seconds.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"model", "targetModel"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(requestCount)
+	prometheus.MustRegister(requestLatency)
+	prometheus.MustRegister(tokenLatency)
+}
 
 func NewServer(pp PodProvider, scheduler Scheduler, targetPodHeader string, datastore ModelDataStore) *Server {
 	return &Server{
@@ -53,7 +87,7 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 	ctx := srv.Context()
 	// Create request context to share states during life time of an HTTP request.
 	// See https://github.com/envoyproxy/envoy/issues/17540.
-	reqCtx := &requestContext{}
+	reqCtx := &requestContext{startTime: time.Now()}
 
 	for {
 		select {
@@ -83,12 +117,19 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 			klog.V(3).Infof("Request context after HandleRequestBody: %v", reqCtx)
 		case *extProcPb.ProcessingRequest_ResponseHeaders:
 			resp, err = s.HandleResponseHeaders(reqCtx, req)
+
+			duration := time.Since(reqCtx.startTime).Seconds()
+			requestLatency.WithLabelValues(reqCtx.model, reqCtx.resolvedTargetModel).Observe(duration)
+
 			klog.V(3).Infof("Request context after HandleResponseHeaders: %v", reqCtx)
 		case *extProcPb.ProcessingRequest_ResponseBody:
 			resp, err = s.HandleResponseBody(reqCtx, req)
+			duration := time.Since(reqCtx.startTime).Seconds()
+			tokenLatency.WithLabelValues(reqCtx.model, reqCtx.resolvedTargetModel).Observe(duration / float64(reqCtx.response.Usage.CompletionTokens))
 			klog.V(3).Infof("Request context after HandleResponseBody: %v", reqCtx)
 		default:
 			klog.Errorf("Unknown Request type %+v", v)
+			requestCount.WithLabelValues(reqCtx.model, reqCtx.resolvedTargetModel, "unknown_request_type").Inc()
 			return status.Error(codes.Unknown, "unknown request type")
 		}
 
@@ -98,6 +139,7 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 			// This code can be returned by scheduler when there is no capacity for sheddable
 			// requests.
 			case codes.ResourceExhausted:
+				requestCount.WithLabelValues(reqCtx.model, reqCtx.resolvedTargetModel, "TooManyRequests").Inc()
 				resp = &extProcPb.ProcessingResponse{
 					Response: &extProcPb.ProcessingResponse_ImmediateResponse{
 						ImmediateResponse: &extProcPb.ImmediateResponse{
@@ -107,22 +149,33 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 						},
 					},
 				}
+				if err := srv.Send(resp); err != nil {
+					klog.Errorf("send error %v", err)
+					return status.Errorf(codes.Unknown, "failed to send response back to Envoy: %v", err)
+				}
 			default:
+				requestCount.WithLabelValues(reqCtx.model, reqCtx.resolvedTargetModel, "internal_error").Inc()
 				return status.Errorf(status.Code(err), "failed to handle request: %v", err)
 			}
 		}
 
 		klog.V(3).Infof("response: %v", resp)
 		if err := srv.Send(resp); err != nil {
+			requestCount.WithLabelValues(reqCtx.model, reqCtx.resolvedTargetModel, "failed_to_send_response").Inc()
+
 			klog.Errorf("send error %v", err)
 			return status.Errorf(codes.Unknown, "failed to send response back to Envoy: %v", err)
+		} else {
+			requestCount.WithLabelValues(reqCtx.model, reqCtx.resolvedTargetModel, "success").Inc()
 		}
 	}
 }
 
 // requestContext stores context information during the life time of an HTTP request.
 type requestContext struct {
-	targetPod *backend.Pod
-	model     string
-	response  *Response
+	targetPod           *backend.Pod
+	model               string
+	resolvedTargetModel string
+	response            *Response
+	startTime           time.Time
 }
