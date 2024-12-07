@@ -16,7 +16,7 @@ import (
 // HandleRequestBody handles body of the request to the backend server, such as parsing the "model"
 // parameter.
 // Envoy sends the request body to ext proc before sending the request to the backend server.
-func (s *Server) HandleRequestBody(reqCtx *RequestContext, req *extProcPb.ProcessingRequest) (*extProcPb.ProcessingResponse, error) {
+func (s *Server) HandleRequestBody(reqCtx *requestContext, req *extProcPb.ProcessingRequest) (*extProcPb.ProcessingResponse, error) {
 	klog.V(3).Infof("Handling request body")
 
 	// Unmarshal request body (must be JSON).
@@ -73,8 +73,8 @@ func (s *Server) HandleRequestBody(reqCtx *RequestContext, req *extProcPb.Proces
 	}
 	klog.V(3).Infof("Selected target model %v in target pod: %v\n", llmReq.ResolvedTargetModel, targetPod)
 
-	reqCtx.Model = llmReq.Model
-	reqCtx.TargetPod = targetPod
+	reqCtx.model = llmReq.Model
+	reqCtx.targetPod = targetPod
 
 	// Insert "target-pod" to instruct Envoy to route requests to the specified target pod.
 	headers := []*configPb.HeaderValueOption{
@@ -117,8 +117,8 @@ func (s *Server) HandleRequestBody(reqCtx *RequestContext, req *extProcPb.Proces
 	return resp, nil
 }
 
-func HandleRequestHeaders(reqCtx *RequestContext, req *extProcPb.ProcessingRequest) *extProcPb.ProcessingResponse {
-	klog.V(3).Info("--- In RequestHeaders processing ...")
+func HandleRequestHeaders(reqCtx *requestContext, req *extProcPb.ProcessingRequest) *extProcPb.ProcessingResponse {
+	klog.V(3).Info("Handling request headers ...")
 	r := req.Request
 	h := r.(*extProcPb.ProcessingRequest_RequestHeaders)
 	klog.V(3).Infof("Headers: %+v\n", h)

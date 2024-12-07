@@ -53,7 +53,7 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 	ctx := srv.Context()
 	// Create request context to share states during life time of an HTTP request.
 	// See https://github.com/envoyproxy/envoy/issues/17540.
-	reqCtx := &RequestContext{}
+	reqCtx := &requestContext{}
 
 	for {
 		select {
@@ -84,6 +84,9 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 		case *extProcPb.ProcessingRequest_ResponseHeaders:
 			resp, err = s.HandleResponseHeaders(reqCtx, req)
 			klog.V(3).Infof("Request context after HandleResponseHeaders: %v", reqCtx)
+		case *extProcPb.ProcessingRequest_ResponseBody:
+			resp, err = s.HandleResponseBody(reqCtx, req)
+			klog.V(3).Infof("Request context after HandleResponseBody: %v", reqCtx)
 		default:
 			klog.Errorf("Unknown Request type %+v", v)
 			return status.Error(codes.Unknown, "unknown request type")
@@ -117,8 +120,9 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 	}
 }
 
-// RequestContext stores context information during the life time of an HTTP request.
-type RequestContext struct {
-	TargetPod *backend.Pod
-	Model     string
+// requestContext stores context information during the life time of an HTTP request.
+type requestContext struct {
+	targetPod *backend.Pod
+	model     string
+	response  *Response
 }
