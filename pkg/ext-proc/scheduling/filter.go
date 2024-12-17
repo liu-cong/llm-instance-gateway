@@ -6,7 +6,7 @@ import (
 
 	klog "k8s.io/klog/v2"
 
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/backend"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/pkg/ext-proc/backend"
 )
 
 type Filter interface {

@@ -18,16 +18,16 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "inference.networking.x-k8s.io/llm-instance-gateway/api/v1alpha1"
+	v1alpha1 "inference.networking.x-k8s.io/gateway-api-inference-extension/api/v1alpha1"
 )
 
 // InferenceModelSpecApplyConfiguration represents a declarative configuration of the InferenceModelSpec type for use
 // with apply.
 type InferenceModelSpecApplyConfiguration struct {
-	ModelName    *string                                 `json:"modelName,omitempty"`
-	Criticality  *v1alpha1.Criticality                   `json:"criticality,omitempty"`
-	TargetModels []TargetModelApplyConfiguration         `json:"targetModels,omitempty"`
-	PoolRef      *LocalObjectReferenceApplyConfiguration `json:"poolRef,omitempty"`
+	ModelName    *string                                `json:"modelName,omitempty"`
+	Criticality  *v1alpha1.Criticality                  `json:"criticality,omitempty"`
+	TargetModels []TargetModelApplyConfiguration        `json:"targetModels,omitempty"`
+	PoolRef      *PoolObjectReferenceApplyConfiguration `json:"poolRef,omitempty"`
 }
 
 // InferenceModelSpecApplyConfiguration constructs a declarative configuration of the InferenceModelSpec type for use with
@@ -68,7 +68,7 @@ func (b *InferenceModelSpecApplyConfiguration) WithTargetModels(values ...*Targe
 // WithPoolRef sets the PoolRef field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the PoolRef field is set to the value of the last call.
-func (b *InferenceModelSpecApplyConfiguration) WithPoolRef(value *LocalObjectReferenceApplyConfiguration) *InferenceModelSpecApplyConfiguration {
+func (b *InferenceModelSpecApplyConfiguration) WithPoolRef(value *PoolObjectReferenceApplyConfiguration) *InferenceModelSpecApplyConfiguration {
 	b.PoolRef = value
 	return b
 }

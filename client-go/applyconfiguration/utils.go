@@ -18,9 +18,9 @@ limitations under the License.
 package applyconfiguration
 
 import (
-	v1alpha1 "inference.networking.x-k8s.io/llm-instance-gateway/api/v1alpha1"
-	apiv1alpha1 "inference.networking.x-k8s.io/llm-instance-gateway/client-go/applyconfiguration/api/v1alpha1"
-	internal "inference.networking.x-k8s.io/llm-instance-gateway/client-go/applyconfiguration/internal"
+	v1alpha1 "inference.networking.x-k8s.io/gateway-api-inference-extension/api/v1alpha1"
+	apiv1alpha1 "inference.networking.x-k8s.io/gateway-api-inference-extension/client-go/applyconfiguration/api/v1alpha1"
+	internal "inference.networking.x-k8s.io/gateway-api-inference-extension/client-go/applyconfiguration/internal"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	testing "k8s.io/client-go/testing"
@@ -43,8 +43,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.InferencePoolSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("InferencePoolStatus"):
 		return &apiv1alpha1.InferencePoolStatusApplyConfiguration{}
-	case v1alpha1.SchemeGroupVersion.WithKind("LocalObjectReference"):
-		return &apiv1alpha1.LocalObjectReferenceApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("PoolObjectReference"):
+		return &apiv1alpha1.PoolObjectReferenceApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("TargetModel"):
 		return &apiv1alpha1.TargetModelApplyConfiguration{}
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/backend"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/pkg/ext-proc/backend"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"

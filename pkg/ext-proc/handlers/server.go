@@ -9,9 +9,9 @@ import (
 	"google.golang.org/grpc/status"
 	klog "k8s.io/klog/v2"
 
-	"inference.networking.x-k8s.io/llm-instance-gateway/api/v1alpha1"
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/backend"
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/scheduling"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/api/v1alpha1"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/pkg/ext-proc/backend"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/pkg/ext-proc/scheduling"
 )
 
 func NewServer(pp PodProvider, scheduler Scheduler, targetPodHeader string, datastore ModelDataStore) *Server {

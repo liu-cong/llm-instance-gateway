@@ -12,10 +12,10 @@ import (
 
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 
-	"inference.networking.x-k8s.io/llm-instance-gateway/api/v1alpha1"
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/backend"
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/handlers"
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/scheduling"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/api/v1alpha1"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/pkg/ext-proc/backend"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/pkg/ext-proc/handlers"
+	"inference.networking.x-k8s.io/gateway-api-inference-extension/pkg/ext-proc/scheduling"
 )
 
 func StartExtProc(port int, refreshPodsInterval, refreshMetricsInterval time.Duration, pods []*backend.PodMetrics, models map[string]*v1alpha1.InferenceModel) *grpc.Server {
