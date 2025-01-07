@@ -43,6 +43,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.InferencePoolSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("InferencePoolStatus"):
 		return &apiv1alpha1.InferencePoolStatusApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ModelServerAttributes"):
+		return &apiv1alpha1.ModelServerAttributesApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("PoolObjectReference"):
 		return &apiv1alpha1.PoolObjectReferenceApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("TargetModel"):

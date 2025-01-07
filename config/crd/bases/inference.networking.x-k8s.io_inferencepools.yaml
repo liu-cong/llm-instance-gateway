@@ -39,6 +39,22 @@ spec:
           spec:
             description: InferencePoolSpec defines the desired state of InferencePool
             properties:
+              modelServerAttributes:
+                description: ModelServerAttributes defines model server specific attributes.
+                properties:
+                  loraEnabled:
+                    default: false
+                    description: |-
+                      If LoRA serving is enabled, the inference extension will scrape LoRA metrics and apply LoRA
+                      affinity strategy.
+                    type: boolean
+                  triton:
+                    type: object
+                  vllm:
+                    description: One and only one of the following model server types
+                      MUST be specified.
+                    type: object
+                type: object
               selector:
                 additionalProperties:
                   description: |-
@@ -74,6 +90,7 @@ spec:
                 minimum: 1
                 type: integer
             required:
+            - modelServerAttributes
             - selector
             - targetPortNumber
             type: object

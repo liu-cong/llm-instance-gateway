@@ -61,6 +61,34 @@ type InferencePoolSpec struct {
 	// +kubebuilder:validation:Maximum=65535
 	// +kubebuilder:validation:Required
 	TargetPortNumber int32 `json:"targetPortNumber"`
+
+	// ModelServerAttributes defines model server specific attributes.
+	//
+	// +kubebuilder:validation:Required
+	ModelServerAttributes ModelServerAttributes `json:"modelServerAttributes"`
+}
+
+type ModelServerAttributes struct {
+	// If LoRA serving is enabled, the inference extension will scrape LoRA metrics and apply LoRA
+	// affinity strategy.
+	//
+	// +optional
+	// +kubebuilder:default=false
+	LoRAEnabled bool `json:"loraEnabled"`
+
+	// One and only one of the following model server types MUST be specified.
+	//
+	// +optional
+	VLLM VLLM `json:"vllm"`
+	//
+	// +optional
+	Triton Triton `json:"triton"`
+}
+
+type VLLM struct {
+}
+
+type Triton struct {
 }
 
 // LabelKey was originally copied from: https://github.com/kubernetes-sigs/gateway-api/blob/99a3934c6bc1ce0874f3a4c5f20cafd8977ffcb4/apis/v1/shared_types.go#L694-L731
