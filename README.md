@@ -34,7 +34,7 @@ Our community meeting is weekly at Th 10AM PDT; [zoom link here](https://zoom.us
 
 We currently utilize the [#wg-serving](https://kubernetes.slack.com/?redir=%2Fmessages%2Fwg-serving) slack channel for communications.
 
-Contributions are readily welcomed, thanks for joining us!
+Contributions are readily welcomed, follow the [dev guide](./docs/dev.md) to start contributing!
 
 ### Code of conduct
 
