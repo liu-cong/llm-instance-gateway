@@ -4,14 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
-	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthPb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -24,8 +18,7 @@ import (
 
 	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/backend"
 	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/backend/vllm"
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/handlers"
-	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/scheduling"
+	"inference.networking.x-k8s.io/llm-instance-gateway/pkg/ext-proc/server"
 )
 
 var (
@@ -85,7 +78,6 @@ func init() {
 }
 
 func main() {
-
 	klog.InitFlags(nil)
 	flag.Parse()
 
@@ -98,100 +90,32 @@ func main() {
 	})
 	klog.Info(flags)
 
-	klog.Infof("Listening on %q", fmt.Sprintf(":%d", *port))
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
-	if err != nil {
-		klog.Fatalf("failed to listen: %v", err)
+	vars := &server.ExtProcServerVars{
+		Port:                   *port,
+		TargetPodHeader:        *targetPodHeader,
+		ServerPoolName:         *serverPoolName,
+		ServiceName:            *serviceName,
+		Namespace:              *namespace,
+		Zone:                   *zone,
+		RefreshPodsInterval:    *refreshPodsInterval,
+		RefreshMetricsInterval: *refreshMetricsInterval,
+		Scheme:                 scheme,
 	}
-
 	datastore := backend.NewK8sDataStore()
-
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-	})
-	if err != nil {
-		klog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	if err := (&backend.InferencePoolReconciler{
-		Datastore:      datastore,
-		Scheme:         mgr.GetScheme(),
-		Client:         mgr.GetClient(),
-		ServerPoolName: *serverPoolName,
-		Namespace:      *namespace,
-		Record:         mgr.GetEventRecorderFor("InferencePool"),
-	}).SetupWithManager(mgr); err != nil {
-		klog.Error(err, "Error setting up InferencePoolReconciler")
-	}
-
-	if err := (&backend.InferenceModelReconciler{
-		Datastore:      datastore,
-		Scheme:         mgr.GetScheme(),
-		Client:         mgr.GetClient(),
-		ServerPoolName: *serverPoolName,
-		Namespace:      *namespace,
-		Record:         mgr.GetEventRecorderFor("InferenceModel"),
-	}).SetupWithManager(mgr); err != nil {
-		klog.Error(err, "Error setting up InferenceModelReconciler")
-	}
-
-	if err := (&backend.EndpointSliceReconciler{
-		Datastore:      datastore,
-		Scheme:         mgr.GetScheme(),
-		Client:         mgr.GetClient(),
-		Record:         mgr.GetEventRecorderFor("endpointslice"),
-		ServiceName:    *serviceName,
-		Zone:           *zone,
-		ServerPoolName: *serverPoolName,
-	}).SetupWithManager(mgr); err != nil {
-		klog.Error(err, "Error setting up EndpointSliceReconciler")
-	}
-
-	errChan := make(chan error)
-	go func() {
-		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-			klog.Error(err, "Error running manager")
-			errChan <- err
-		}
-	}()
-
-	s := grpc.NewServer()
-
 	pp := backend.NewProvider(&vllm.PodMetricsClientImpl{}, datastore)
 	if err := pp.Init(*refreshPodsInterval, *refreshMetricsInterval); err != nil {
 		klog.Fatalf("failed to initialize: %v", err)
 	}
-	extProcPb.RegisterExternalProcessorServer(
-		s,
-		handlers.NewServer(
-			pp,
-			scheduling.NewScheduler(pp),
-			*targetPodHeader,
-			datastore))
-	healthPb.RegisterHealthServer(s, &healthServer{})
 
-	klog.Infof("Starting gRPC server on port :%v", *port)
-
-	// shutdown
-	var gracefulStop = make(chan os.Signal, 1)
-	signal.Notify(gracefulStop, syscall.SIGTERM)
-	signal.Notify(gracefulStop, syscall.SIGINT)
-	go func() {
-		select {
-		case sig := <-gracefulStop:
-			klog.Infof("caught sig: %+v", sig)
-			os.Exit(0)
-		case err := <-errChan:
-			klog.Infof("caught error in controller: %+v", err)
-			os.Exit(0)
-		}
-
-	}()
-
-	err = s.Serve(lis)
+	s, lis, err := server.RunExtProcWithConfig(vars, ctrl.GetConfigOrDie(), pp, datastore)
 	if err != nil {
 		klog.Fatalf("Ext-proc failed with the err: %v", err)
 	}
 
+	err = s.Serve(lis)
+
+	if err != nil {
+		klog.Fatalf("Ext-proc failed with the err: %v", err)
+	}
+	healthPb.RegisterHealthServer(s, &healthServer{})
 }

@@ -3,6 +3,7 @@ kind: InferencePool
 metadata:
   labels:
   name: vllm-llama2-7b-pool
+  namespace: default
 spec:
   targetPort: 8000
   modelServerSelector:
@@ -15,6 +16,7 @@ metadata:
     app.kubernetes.io/name: api
     app.kubernetes.io/managed-by: kustomize
   name: inferencemodel-sample
+  namespace: default
 spec:
   modelName: sql-lora
   criticality: Critical
