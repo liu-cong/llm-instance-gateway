@@ -99,6 +99,7 @@ func RunExtProcWithConfig(vars *ExtProcServerVars, config *rest.Config, pp *back
 			datastore))
 
 	klog.Infof("Starting gRPC server on port :%v", vars.Port)
+	klog.Infof("$$$$ datastore inference models during :%v", datastore.InferenceModels)
 	/*
 		// shutdown
 		var gracefulStop = make(chan os.Signal, 1)

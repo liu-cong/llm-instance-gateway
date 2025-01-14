@@ -43,6 +43,16 @@ func WithPods(pods []*PodMetrics) K8sDatastoreOption {
 	}
 }
 
+// WithModels can be used in tests to override the pods.
+func WithModels(models map[string]*v1alpha1.InferenceModel) K8sDatastoreOption {
+	return func(store *K8sDatastore) {
+		store.InferenceModels = &sync.Map{}
+		for modelName, model := range models {
+			store.InferenceModels.Store(modelName, model)
+		}
+	}
+}
+
 func (ds *K8sDatastore) setInferencePool(pool *v1alpha1.InferencePool) {
 	ds.poolMu.Lock()
 	defer ds.poolMu.Unlock()
@@ -68,6 +78,8 @@ func (ds *K8sDatastore) GetPodIPs() []string {
 }
 
 func (s *K8sDatastore) FetchModelData(modelName string) (returnModel *v1alpha1.InferenceModel) {
+	fmt.Printf("($$$FetchModelData$$$) datastore: %+v\n", s)
+	fmt.Printf("($$$FetchModelData$$$) InferenceModels: %+v\n", s.InferenceModels)
 	infModel, ok := s.InferenceModels.Load(modelName)
 	if ok {
 		returnModel = infModel.(*v1alpha1.InferenceModel)

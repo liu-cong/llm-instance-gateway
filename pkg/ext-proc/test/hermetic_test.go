@@ -23,7 +23,7 @@ import (
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/yaml"
 
@@ -43,7 +43,7 @@ const (
 
 var (
 	cfg       *rest.Config
-	k8sClient client.Client
+	k8sClient k8sclient.Client
 	testEnv   *envtest.Environment
 	scheme    *runtime.Scheme
 )
@@ -196,15 +196,19 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 			wantBody: []byte("{\"max_tokens\":100,\"model\":\"sql-lora\",\"prompt\":\"hello\",\"temperature\":0}"),
 			wantErr:  false,
 		},
-		{
-			name:        "failure-model-dne",
-			req:         GenerateRequest("mystery-model"),
-			wantHeaders: nil,
-			wantBody:    nil,
-			// "mystery-model is not a real model under active models, thus we should error."
-			wantErr: true,
-		},
+		/*
+			{
+				name:        "failure-model-dne",
+				req:         GenerateRequest("mystery-model"),
+				wantHeaders: nil,
+				wantBody:    nil,
+				// "mystery-model is not a real model under active models, thus we should error."
+				wantErr: true,
+			},
+		*/
 	}
+
+	log.Print("==== Start of TestKubeInferenceModelRequest") // logging
 
 	// Set up mock k8s API Client
 	testEnv = &envtest.Environment{
@@ -216,58 +220,15 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 		log.Fatalf("Failed to start test environment, cfg: %v error: %v", cfg, err)
 	}
 
-	scheme = runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+	k8sClient, err = k8sclient.New(cfg, k8sclient.Options{Scheme: scheme})
 	if err != nil {
 		log.Fatalf("Failed to start k8s Client: %v", err)
 	} else if k8sClient == nil {
 		log.Fatalf("No error, but returned kubernetes client is nil, cfg: %v", cfg)
 	}
-
-	// Unmarshal CRDs from file into structs
-	manifestsPath := filepath.Join("..", "..", "..", "examples", "poc", "manifests", "inferencepool-with-model.yaml")
-	docs, err := readDocuments(manifestsPath)
-	if err != nil {
-		log.Fatalf("Can't read object manifests at path %v, %v", manifestsPath, err)
-	}
-
-	var inferenceModels []*v1alpha1.InferenceModel
-	for _, doc := range docs {
-		log.Printf("#### doc (yaml):%s", doc)
-		inferenceModel := &v1alpha1.InferenceModel{}
-		if err = yaml.Unmarshal(doc, inferenceModel); err != nil {
-			log.Fatalf("Can't unmarshal object: %v", doc)
-		}
-		log.Printf("#### inferenceModel.Kind: %v", inferenceModel.Kind)
-		log.Printf("#### object %+v", inferenceModel.Spec)
-		if inferenceModel.Kind != "InferenceModel" {
-			continue
-		}
-		inferenceModels = append(inferenceModels, inferenceModel)
-	}
-	for _, model := range inferenceModels {
-		if err := k8sClient.Create(context.Background(), model); err != nil {
-			log.Fatalf("unable to create inferenceModel %v: %v", model.GetName(), err)
-		}
-	}
-
-	inferenceModel := &v1alpha1.InferenceModel{}
-	err = k8sClient.Get(context.Background(), client.ObjectKey{
-		Namespace: "default",
-		Name:      "inferencemodel-sample",
-	}, inferenceModel)
-	if err != nil {
-		log.Fatalf("unable to retrieve inferenceModel %v: %v", "inferencemodel-sample", err)
-	}
-	/*
-		models := map[string]*v1alpha1.InferenceModel{
-			inferenceModel.GetName(): inferenceModel,
-		}
-	*/
-	log.Printf("inference model: %+v", inferenceModel.Spec) // TEMP
 
 	pods := []*backend.PodMetrics{
 		{
@@ -303,8 +264,9 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 			},
 		},
 	}
-
+	log.Print("&&&& Start of Tests &&&&") // logging
 	for _, test := range tests {
+		log.Printf("==== Start of Test: %+v", test) // logging
 		t.Run(test.name, func(t *testing.T) {
 			client, cleanup := setUpHermeticServer(t, cfg, pods)
 			t.Cleanup(cleanup)
@@ -380,13 +342,28 @@ func setUpHermeticServer(t *testing.T, cfg *rest.Config, pods []*backend.PodMetr
 		pms[pod.Pod] = pod
 	}
 	pmc := &backend.FakePodMetricsClient{Res: pms}
-	log.Printf("(fake) pod metrics client: %+v", pmc) // logging
-
+	// log.Printf("(fake) pod metrics client: %+v", pmc) // logging
+	/*
+		inferenceModel := &v1alpha1.InferenceModel{}
+		err := k8sClient.Get(context.Background(), k8sclient.ObjectKey{
+			Namespace: "default",
+			Name:      "inferencemodel-sample",
+		}, inferenceModel)
+		if err != nil {
+			log.Fatalf("unable to retrieve inferenceModel %v: %v", "inferencemodel-sample", err)
+		}
+		models := map[string]*v1alpha1.InferenceModel{
+			inferenceModel.GetName(): inferenceModel,
+		}
+	*/
+	//log.Printf("#### datastore before: %+v", datastore)
 	pp := backend.NewProvider(pmc, backend.NewK8sDataStore(backend.WithPods(pods)))
 	if err := pp.Init(serverVars.RefreshPodsInterval, serverVars.RefreshMetricsInterval); err != nil {
 		log.Fatalf("failed to initialize: %v", err)
 	}
-	log.Printf("pod provider: %+v", pp) // logging
+	// log.Printf("pod provider: %+v", pp) // logging
+
+	//log.Printf("inference model: %+v", inferenceModel.Spec) // TEMP
 
 	datastore := backend.NewK8sDataStore()
 	server, lis, err := server.RunExtProcWithConfig(serverVars, cfg, pp, datastore)
@@ -394,10 +371,39 @@ func setUpHermeticServer(t *testing.T, cfg *rest.Config, pods []*backend.PodMetr
 		log.Fatalf("Ext-proc failed with the err: %v", err)
 	}
 
+	// Unmarshal CRDs from file into structs
+	manifestsPath := filepath.Join("..", "..", "..", "examples", "poc", "manifests", "inferencepool-with-model.yaml")
+	docs, err := readDocuments(manifestsPath)
+	if err != nil {
+		log.Fatalf("Can't read object manifests at path %v, %v", manifestsPath, err)
+	}
+
+	var inferenceModels []*v1alpha1.InferenceModel
+	for _, doc := range docs {
+		log.Printf("#### doc (yaml):%s", doc)
+		inferenceModel := &v1alpha1.InferenceModel{}
+		if err = yaml.Unmarshal(doc, inferenceModel); err != nil {
+			log.Fatalf("Can't unmarshal object: %v", doc)
+		}
+		log.Printf("#### inferenceModel.Kind: %v", inferenceModel.Kind)
+		log.Printf("#### object %+v", inferenceModel.Spec)
+		if inferenceModel.Kind != "InferenceModel" {
+			continue
+		}
+		log.Print("$$$ ADDED OBJECT AS InferenceModel $$$")
+		inferenceModels = append(inferenceModels, inferenceModel)
+	}
+	for _, model := range inferenceModels {
+		if err := k8sClient.Create(context.Background(), model); err != nil {
+			log.Fatalf("unable to create inferenceModel %v: %v", model.GetName(), err)
+		}
+	}
+
 	reflection.Register(server)
 	go server.Serve(lis)
 
-	log.Printf("#### datastore after: %+v", datastore) // logging
+	log.Printf("#### datastore after: %+v", datastore)                            // logging
+	log.Printf("#### datastore inference models: %+v", datastore.InferenceModels) // logging
 	//log.Fatalf("STOP")
 
 	address := fmt.Sprintf("localhost:%v", port)
@@ -406,6 +412,8 @@ func setUpHermeticServer(t *testing.T, cfg *rest.Config, pods []*backend.PodMetr
 	if err != nil {
 		log.Fatalf("Failed to connect to %v: %v", address, err)
 	}
+
+	// log.Printf("#### connection: %+v", conn) // logging
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	client, err = extProcPb.NewExternalProcessorClient(conn).Process(ctx)

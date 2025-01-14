@@ -28,7 +28,7 @@ func (c *InferenceModelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	service := &v1alpha1.InferenceModel{}
 	if err := c.Get(ctx, req.NamespacedName, service); err != nil {
-		klog.Error(err, "unable to get InferencePool")
+		klog.Error(err, "unable to get InferenceModel")
 		return ctrl.Result{}, err
 	}
 
