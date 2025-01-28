@@ -52,36 +52,14 @@ implementation.
 The model servers MUST support serving a LoRA adapter specified in the `model` argument of the
 request, provided the requested adapter is valid.
 
-The model server MUST expose the following LoRA adapter information via a RESTful API with response
-in JSON :
+The model server MUST expose the following LoRA adapter metrics via the same Prometheus endpoint:
 
-* `Config` 
-  * `LoRAEnabled`: boolean, whether dynamic LoRA serving is enabled.
-  *  `MaxActiveAdapter`: integer, the maximum number of adapters that can be loaded to GPU memory to
-  serve a batch. Requests will be queued if the model server has reached MaxActiveAdapter and cannot
-  load the requested adapter. 
-* `State`
-  * `ActiveAdapters`: List[string], a list of adapters that are currently loaded in GPU memory and
-  ready to serve requests.
-
-This is an example API endpoint and response:
-```
-GET ${server_endpoint}/adapters/info
-```
-
-```
-{
-    "config": {
-        "enabled": true,
-        "maxActiveAdapters": 4,
-    },
-    "state": {
-        "activeAdapters": ["adapter1", "adapter2"]
-    }
-}
-```
-
-NOTE: Currently in vLLM v0.6.6, LoRA info is exposed in the `vllm:lora_requests_info` metric, where
-`MaxActiveAdapters` is exposed as a string label `max_lora`, and `ActiveAdapters` as a comma
-separated string label `running_lora_adapters`. We will use [this issue](https://github.com/vllm-project/vllm/issues/10086)
-to track integration efforts with vLLM.
+* Metric name implemented in vLLM: `vllm:lora_requests_info` 
+* Metric type: Gauge
+* Metric value: The last updated timestamp (so the EPP can find the latest).
+* Metric labels: 
+  * `max_lora`: The maximum number of adapters that can be loaded to GPU memory to serve a batch.
+  Requests will be queued if the model server has reached MaxActiveAdapter and canno load the
+  requested adapter. Example: `"max_lora": "8"`.
+  * `running_lora_adapters`: A comma separated list of adapters that are currently loaded in GPU
+    memory and ready to serve requests. Example: `"running_lora_adapters": "adapter1, adapter2"`
