@@ -171,6 +171,6 @@ func getLatestMetric(metricFamilies map[string]*dto.MetricFamily, metricName str
 			latest = m
 		}
 	}
-	klog.V(logutil.DEBUG).Infof("Got metric value %+v for metric %v", latest, metricName)
+	klog.V(logutil.TRACE).Infof("Got metric value %+v for metric %v", latest, metricName)
 	return latest, nil
 }

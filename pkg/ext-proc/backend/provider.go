@@ -80,7 +80,7 @@ func (p *Provider) Init(refreshPodsInterval, refreshMetricsInterval time.Duratio
 		for {
 			time.Sleep(refreshMetricsInterval)
 			if err := p.refreshMetricsOnce(); err != nil {
-				klog.V(logutil.DEBUG).Infof("Failed to refresh metrics: %v", err)
+				klog.V(logutil.TRACE).Infof("Failed to refresh metrics: %v", err)
 			}
 		}
 	}()
@@ -135,12 +135,12 @@ func (p *Provider) refreshMetricsOnce() error {
 	defer func() {
 		d := time.Since(start)
 		// TODO: add a metric instead of logging
-		klog.V(logutil.DEBUG).Infof("Refreshed metrics in %v", d)
+		klog.V(logutil.TRACE).Infof("Refreshed metrics in %v", d)
 	}()
 	var wg sync.WaitGroup
 	errCh := make(chan error)
 	processOnePod := func(key, value any) bool {
-		klog.V(logutil.DEBUG).Infof("Processing pod %v and metric %v", key, value)
+		klog.V(logutil.TRACE).Infof("Processing pod %v and metric %v", key, value)
 		pod := key.(Pod)
 		existing := value.(*PodMetrics)
 		wg.Add(1)
@@ -152,7 +152,7 @@ func (p *Provider) refreshMetricsOnce() error {
 				return
 			}
 			p.UpdatePodMetrics(pod, updated)
-			klog.V(logutil.DEBUG).Infof("Updated metrics for pod %s: %v", pod, updated.Metrics)
+			klog.V(logutil.TRACE).Infof("Updated metrics for pod %s: %v", pod, updated.Metrics)
 		}()
 		return true
 	}
