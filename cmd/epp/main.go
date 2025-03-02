@@ -37,7 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	"sigs.k8s.io/gateway-api-inference-extension/internal/runnable"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend/vllm"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
@@ -144,20 +143,16 @@ func run() error {
 	ctx := ctrl.SetupSignalHandler()
 
 	// Setup runner.
-	datastore := datastore.NewDatastore()
-	provider := backend.NewProvider(&vllm.PodMetricsClientImpl{}, datastore)
+	datastore := datastore.NewDatastore(ctx, &vllm.PodMetricsClientImpl{}, *refreshMetricsInterval, *refreshPrometheusMetricsInterval)
 	serverRunner := &runserver.ExtProcServerRunner{
 		GrpcPort:                                 *grpcPort,
 		DestinationEndpointHintMetadataNamespace: *destinationEndpointHintMetadataNamespace,
 		DestinationEndpointHintKey:               *destinationEndpointHintKey,
 		PoolName:                                 *poolName,
 		PoolNamespace:                            *poolNamespace,
-		RefreshMetricsInterval:                   *refreshMetricsInterval,
-		RefreshPrometheusMetricsInterval:         *refreshPrometheusMetricsInterval,
 		Datastore:                                datastore,
 		SecureServing:                            *secureServing,
 		CertPath:                                 *certPath,
-		Provider:                                 provider,
 		UseStreaming:                             useStreamingServer,
 	}
 	if err := serverRunner.SetupWithManager(ctx, mgr); err != nil {

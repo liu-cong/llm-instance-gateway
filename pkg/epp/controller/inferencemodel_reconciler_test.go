@@ -190,7 +190,7 @@ func TestInferenceModelReconciler(t *testing.T) {
 				WithIndex(&v1alpha2.InferenceModel{}, datastore.ModelNameIndexKey, indexInferenceModelsByModelName).
 				Build()
 
-			datastore := datastore.NewFakeDatastore(nil, test.modelsInStore, pool)
+			datastore := datastore.NewFakeDatastore(t.Context(), &datastore.FakePodMetricsClient{}, nil, test.modelsInStore, pool)
 			reconciler := &InferenceModelReconciler{
 				Client:             fakeClient,
 				Record:             record.NewFakeRecorder(10),

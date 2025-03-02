@@ -17,10 +17,14 @@ limitations under the License.
 package datastore
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
@@ -66,7 +70,7 @@ func TestPool(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			datastore := NewDatastore()
+			datastore := NewDatastore(context.Background(), &FakePodMetricsClient{}, time.Second, time.Second)
 			datastore.PoolSet(tt.inferencePool)
 			gotPool, gotErr := datastore.PoolGet()
 			if diff := cmp.Diff(tt.wantErr, gotErr, cmpopts.EquateErrors()); diff != "" {
@@ -197,7 +201,7 @@ func TestModel(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ds := NewFakeDatastore(nil, test.existingModels, nil)
+			ds := NewFakeDatastore(t.Context(), &FakePodMetricsClient{}, nil, test.existingModels, nil)
 			gotOpResult := test.op(ds)
 			if gotOpResult != test.wantOpResult {
 				t.Errorf("Unexpected operation result, want: %v, got: %v", test.wantOpResult, gotOpResult)
@@ -316,4 +320,124 @@ func TestRandomWeightedDraw(t *testing.T) {
 
 func pointer(v int32) *int32 {
 	return &v
+}
+
+var (
+	pod1 = &PodMetrics{
+		Pod: Pod{
+			NamespacedName: types.NamespacedName{
+				Name: "pod1",
+			},
+		},
+	}
+	pod1WithMetrics = &PodMetrics{
+		Pod: pod1.Pod,
+		Metrics: Metrics{
+			WaitingQueueSize:    0,
+			KVCacheUsagePercent: 0.2,
+			MaxActiveModels:     2,
+			ActiveModels: map[string]int{
+				"foo": 1,
+				"bar": 1,
+			},
+		},
+	}
+	pod2 = &PodMetrics{
+		Pod: Pod{
+			NamespacedName: types.NamespacedName{
+				Name: "pod2",
+			},
+		},
+	}
+	pod2WithMetrics = &PodMetrics{
+		Pod: pod2.Pod,
+		Metrics: Metrics{
+			WaitingQueueSize:    1,
+			KVCacheUsagePercent: 0.2,
+			MaxActiveModels:     2,
+			ActiveModels: map[string]int{
+				"foo1": 1,
+				"bar1": 1,
+			},
+		},
+	}
+
+	inferencePool = &v1alpha2.InferencePool{
+		Spec: v1alpha2.InferencePoolSpec{
+			TargetPortNumber: 8000,
+		},
+	}
+)
+
+func TestMetrics(t *testing.T) {
+	tests := []struct {
+		name      string
+		pmc       PodMetricsClient
+		storePods []*PodMetrics
+		want      []*PodMetrics
+	}{
+		{
+			name: "Probing metrics success",
+			pmc: &FakePodMetricsClient{
+				Res: map[types.NamespacedName]*PodMetrics{
+					pod1.NamespacedName: pod1WithMetrics,
+					pod2.NamespacedName: pod2WithMetrics,
+				},
+			},
+			storePods: []*PodMetrics{pod1, pod2},
+			want:      []*PodMetrics{pod1WithMetrics, pod2WithMetrics},
+		},
+		{
+			name: "Only pods in are probed",
+			pmc: &FakePodMetricsClient{
+				Res: map[types.NamespacedName]*PodMetrics{
+					pod1.NamespacedName: pod1WithMetrics,
+					pod2.NamespacedName: pod2WithMetrics,
+				},
+			},
+			storePods: []*PodMetrics{pod1},
+			want:      []*PodMetrics{pod1WithMetrics},
+		},
+		{
+			name: "Probing metrics error",
+			pmc: &FakePodMetricsClient{
+				Err: map[types.NamespacedName]error{
+					pod2.NamespacedName: errors.New("injected error"),
+				},
+				Res: map[types.NamespacedName]*PodMetrics{
+					pod1.NamespacedName: pod1WithMetrics,
+				},
+			},
+			storePods: []*PodMetrics{pod1, pod2},
+			want: []*PodMetrics{
+				pod1WithMetrics,
+				// Failed to fetch pod2 metrics so it remains the default values.
+				{
+					Pod: Pod{NamespacedName: pod2.NamespacedName},
+					Metrics: Metrics{
+						ActiveModels:        map[string]int{},
+						WaitingQueueSize:    0,
+						KVCacheUsagePercent: 0,
+						MaxActiveModels:     0,
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ds := NewFakeDatastore(ctx, test.pmc, test.storePods, nil, inferencePool)
+
+			assert.EventuallyWithT(t, func(t *assert.CollectT) {
+				metrics := ds.PodGetAll()
+				diff := cmp.Diff(test.want, metrics, cmpopts.IgnoreFields(Metrics{}, "UpdateTime"), cmpopts.SortSlices(func(a, b *PodMetrics) bool {
+					return a.String() < b.String()
+				}))
+				assert.Equal(t, "", diff, "Unexpected diff (+got/-want)")
+			}, 5*time.Second, time.Millisecond)
+		})
+	}
 }

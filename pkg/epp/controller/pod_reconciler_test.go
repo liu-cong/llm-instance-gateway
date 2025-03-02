@@ -39,6 +39,7 @@ var (
 	basePod2  = &datastore.PodMetrics{Pod: datastore.Pod{NamespacedName: types.NamespacedName{Name: "pod2"}, Address: "address-2"}}
 	basePod3  = &datastore.PodMetrics{Pod: datastore.Pod{NamespacedName: types.NamespacedName{Name: "pod3"}, Address: "address-3"}}
 	basePod11 = &datastore.PodMetrics{Pod: datastore.Pod{NamespacedName: types.NamespacedName{Name: "pod1"}, Address: "address-11"}}
+	pmc       = &datastore.FakePodMetricsClient{}
 )
 
 func TestPodReconciler(t *testing.T) {
@@ -51,7 +52,7 @@ func TestPodReconciler(t *testing.T) {
 	}{
 		{
 			name: "Add new pod",
-			datastore: datastore.NewFakeDatastore([]*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
+			datastore: datastore.NewFakeDatastore(t.Context(), pmc, []*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
 				Spec: v1alpha2.InferencePoolSpec{
 					TargetPortNumber: int32(8000),
 					Selector: map[v1alpha2.LabelKey]v1alpha2.LabelValue{
@@ -67,7 +68,7 @@ func TestPodReconciler(t *testing.T) {
 		},
 		{
 			name: "Update pod1 address",
-			datastore: datastore.NewFakeDatastore([]*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
+			datastore: datastore.NewFakeDatastore(t.Context(), pmc, []*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
 				Spec: v1alpha2.InferencePoolSpec{
 					TargetPortNumber: int32(8000),
 					Selector: map[v1alpha2.LabelKey]v1alpha2.LabelValue{
@@ -83,7 +84,7 @@ func TestPodReconciler(t *testing.T) {
 		},
 		{
 			name: "Delete pod with DeletionTimestamp",
-			datastore: datastore.NewFakeDatastore([]*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
+			datastore: datastore.NewFakeDatastore(t.Context(), pmc, []*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
 				Spec: v1alpha2.InferencePoolSpec{
 					TargetPortNumber: int32(8000),
 					Selector: map[v1alpha2.LabelKey]v1alpha2.LabelValue{
@@ -99,7 +100,7 @@ func TestPodReconciler(t *testing.T) {
 		},
 		{
 			name: "Delete notfound pod",
-			datastore: datastore.NewFakeDatastore([]*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
+			datastore: datastore.NewFakeDatastore(t.Context(), pmc, []*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
 				Spec: v1alpha2.InferencePoolSpec{
 					TargetPortNumber: int32(8000),
 					Selector: map[v1alpha2.LabelKey]v1alpha2.LabelValue{
@@ -112,7 +113,7 @@ func TestPodReconciler(t *testing.T) {
 		},
 		{
 			name: "New pod, not ready, valid selector",
-			datastore: datastore.NewFakeDatastore([]*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
+			datastore: datastore.NewFakeDatastore(t.Context(), pmc, []*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
 				Spec: v1alpha2.InferencePoolSpec{
 					TargetPortNumber: int32(8000),
 					Selector: map[v1alpha2.LabelKey]v1alpha2.LabelValue{
@@ -126,7 +127,7 @@ func TestPodReconciler(t *testing.T) {
 		},
 		{
 			name: "Remove pod that does not match selector",
-			datastore: datastore.NewFakeDatastore([]*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
+			datastore: datastore.NewFakeDatastore(t.Context(), pmc, []*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
 				Spec: v1alpha2.InferencePoolSpec{
 					TargetPortNumber: int32(8000),
 					Selector: map[v1alpha2.LabelKey]v1alpha2.LabelValue{
@@ -141,7 +142,7 @@ func TestPodReconciler(t *testing.T) {
 		},
 		{
 			name: "Remove pod that is not ready",
-			datastore: datastore.NewFakeDatastore([]*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
+			datastore: datastore.NewFakeDatastore(t.Context(), pmc, []*datastore.PodMetrics{basePod1, basePod2}, nil, &v1alpha2.InferencePool{
 				Spec: v1alpha2.InferencePoolSpec{
 					TargetPortNumber: int32(8000),
 					Selector: map[v1alpha2.LabelKey]v1alpha2.LabelValue{
@@ -170,8 +171,8 @@ func TestPodReconciler(t *testing.T) {
 				Build()
 
 			podReconciler := &PodReconciler{Client: fakeClient, Datastore: test.datastore}
-			namespacedName := types.NamespacedName{Name: test.incomingPod.Name, Namespace: test.incomingPod.Namespace}
 			if test.req == nil {
+				namespacedName := types.NamespacedName{Name: test.incomingPod.Name, Namespace: test.incomingPod.Namespace}
 				test.req = &ctrl.Request{NamespacedName: namespacedName}
 			}
 			if _, err := podReconciler.Reconcile(context.Background(), *test.req); err != nil {
@@ -179,13 +180,9 @@ func TestPodReconciler(t *testing.T) {
 			}
 
 			var gotPods []datastore.Pod
-			test.datastore.PodRange(func(k, v any) bool {
-				pod := v.(*datastore.PodMetrics)
-				if v != nil {
-					gotPods = append(gotPods, pod.Pod)
-				}
-				return true
-			})
+			for _, pm := range test.datastore.PodGetAll() {
+				gotPods = append(gotPods, pm.Pod)
+			}
 			if !cmp.Equal(gotPods, test.wantPods, cmpopts.SortSlices(func(a, b datastore.Pod) bool { return a.NamespacedName.String() < b.NamespacedName.String() })) {
 				t.Errorf("got (%v) != want (%v);", gotPods, test.wantPods)
 			}

@@ -57,7 +57,7 @@ func (c *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	c.updateDatastore(logger, pod)
+	c.updateDatastore(ctx, logger, pod)
 	return ctrl.Result{}, nil
 }
 
@@ -67,13 +67,13 @@ func (c *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(c)
 }
 
-func (c *PodReconciler) updateDatastore(logger logr.Logger, pod *corev1.Pod) {
+func (c *PodReconciler) updateDatastore(ctx context.Context, logger logr.Logger, pod *corev1.Pod) {
 	namespacedName := types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}
 	if !pod.DeletionTimestamp.IsZero() || !c.Datastore.PoolLabelsMatch(pod.Labels) || !podIsReady(pod) {
 		logger.V(logutil.DEBUG).Info("Pod removed or not added", "name", namespacedName)
 		c.Datastore.PodDelete(namespacedName)
 	} else {
-		if c.Datastore.PodUpdateOrAddIfNotExist(pod) {
+		if c.Datastore.PodUpdateOrAddIfNotExist(ctx, pod) {
 			logger.V(logutil.DEFAULT).Info("Pod added", "name", namespacedName)
 		} else {
 			logger.V(logutil.DEFAULT).Info("Pod already exists", "name", namespacedName)

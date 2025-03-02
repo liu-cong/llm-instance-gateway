@@ -19,6 +19,7 @@ package datastore
 
 import (
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -37,6 +38,15 @@ type Metrics struct {
 	WaitingQueueSize        int
 	KVCacheUsagePercent     float64
 	KvCacheMaxTokenCapacity int
+
+	// UpdateTime record the last time when the metrics were updated.
+	UpdateTime time.Time
+}
+
+func NewMetrics() Metrics {
+	return Metrics{
+		ActiveModels: make(map[string]int),
+	}
 }
 
 type PodMetrics struct {

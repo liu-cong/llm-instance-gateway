@@ -14,29 +14,53 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package backend
+package datastore
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 )
 
 type FakePodMetricsClient struct {
-	Err map[types.NamespacedName]error
-	Res map[types.NamespacedName]*datastore.PodMetrics
+	errMu sync.RWMutex
+	Err   map[types.NamespacedName]error
+	resMu sync.RWMutex
+	Res   map[types.NamespacedName]*PodMetrics
 }
 
-func (f *FakePodMetricsClient) FetchMetrics(ctx context.Context, existing *datastore.PodMetrics, port int32) (*datastore.PodMetrics, error) {
-	if err, ok := f.Err[existing.NamespacedName]; ok {
+func (f *FakePodMetricsClient) FetchMetrics(ctx context.Context, existing *PodMetrics, port int32) (*PodMetrics, error) {
+	f.errMu.RLock()
+	err, ok := f.Err[existing.NamespacedName]
+	f.errMu.RUnlock()
+	if ok {
 		return nil, err
 	}
-	log.FromContext(ctx).V(logutil.VERBOSE).Info("Fetching metrics for pod", "existing", existing, "new", f.Res[existing.NamespacedName])
-	return f.Res[existing.NamespacedName], nil
+	f.resMu.RLock()
+	res, ok := f.Res[existing.NamespacedName]
+	f.resMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("no pod found: %v", existing.NamespacedName)
+	}
+	log.FromContext(ctx).V(logutil.VERBOSE).Info("Fetching metrics for pod", "existing", existing, "new", res)
+	return res.Clone(), nil
+}
+
+func (f *FakePodMetricsClient) SetRes(new map[types.NamespacedName]*PodMetrics) {
+	f.resMu.Lock()
+	defer f.resMu.Unlock()
+	f.Res = new
+}
+
+func (f *FakePodMetricsClient) SetErr(new map[types.NamespacedName]error) {
+	f.errMu.Lock()
+	defer f.errMu.Unlock()
+	f.Err = new
 }
 
 type FakeDataStore struct {

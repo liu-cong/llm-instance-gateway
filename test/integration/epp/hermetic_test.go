@@ -55,7 +55,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/server"
@@ -396,7 +395,8 @@ func setUpHermeticServer(t *testing.T, podMetrics []*datastore.PodMetrics) (clie
 	for _, pm := range podMetrics {
 		pms[pm.NamespacedName] = pm
 	}
-	pmc := &backend.FakePodMetricsClient{Res: pms}
+	// Reconfigure the TestPodMetricsClient.
+	serverRunner.TestPodMetricsClient.SetRes(pms)
 
 	serverCtx, stopServer := context.WithCancel(context.Background())
 
@@ -425,7 +425,6 @@ func setUpHermeticServer(t *testing.T, podMetrics []*datastore.PodMetrics) (clie
 			logutil.Fatal(logger, err, "Failed to update pod status", "pod", pm.NamespacedName)
 		}
 	}
-	serverRunner.Provider = backend.NewProvider(pmc, serverRunner.Datastore)
 	go func() {
 		if err := serverRunner.AsRunnable(logger.WithName("ext-proc")).Start(serverCtx); err != nil {
 			logutil.Fatal(logger, err, "Failed to start ext-proc server")
@@ -503,9 +502,10 @@ func BeforeSuit(t *testing.T) func() {
 	}
 
 	serverRunner = runserver.NewDefaultExtProcServerRunner()
+	serverRunner.TestPodMetricsClient = &datastore.FakePodMetricsClient{}
 	// Adjust from defaults
 	serverRunner.PoolName = "vllm-llama2-7b-pool"
-	serverRunner.Datastore = datastore.NewDatastore()
+	serverRunner.Datastore = datastore.NewDatastore(context.Background(), serverRunner.TestPodMetricsClient, runserver.DefaultRefreshMetricsInterval, runserver.DefaultRefreshPrometheusMetricsInterval)
 	serverRunner.SecureServing = false
 
 	if err := serverRunner.SetupWithManager(context.Background(), mgr); err != nil {

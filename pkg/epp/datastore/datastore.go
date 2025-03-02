@@ -22,23 +22,30 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 )
 
 const (
 	ModelNameIndexKey = "spec.modelName"
+	// Note currently the EPP treats stale metrics same as fresh.
+	// TODO: https://github.com/kubernetes-sigs/gateway-api-inference-extension/issues/336
+	metricsValidityPeriod = 5 * time.Second
 )
 
 var (
 	errPoolNotSynced = errors.New("InferencePool is not initialized in data store")
+	once             sync.Once
 )
 
 // The datastore is a local cache of relevant data for the given InferencePool (currently all pulled from k8s-api)
@@ -57,56 +64,133 @@ type Datastore interface {
 	ModelGetAll() []*v1alpha2.InferenceModel
 
 	// PodMetrics operations
-	PodUpdateOrAddIfNotExist(pod *corev1.Pod) bool
-	PodUpdateMetricsIfExist(namespacedName types.NamespacedName, m *Metrics) bool
-	PodGet(namespacedName types.NamespacedName) *PodMetrics
+	// PodGetAll returns all pods and metrics, including fresh and stale.
+	PodGetAll() []*PodMetrics
+	PodUpdateOrAddIfNotExist(ctx context.Context, pod *corev1.Pod) bool
 	PodDelete(namespacedName types.NamespacedName)
 	PodResyncAll(ctx context.Context, ctrlClient client.Client)
-	PodGetAll() []*PodMetrics
-	PodDeleteAll() // This is only for testing.
-	PodRange(f func(key, value any) bool)
 
 	// Clears the store state, happens when the pool gets deleted.
 	Clear()
 }
 
-func NewDatastore() Datastore {
+func NewDatastore(parentCtx context.Context, pmc PodMetricsClient, refreshMetricsInterval, refreshPrometheusMetricsInterval time.Duration) *datastore {
 	store := &datastore{
-		poolAndModelsMu: sync.RWMutex{},
-		models:          make(map[string]*v1alpha2.InferenceModel),
-		pods:            &sync.Map{},
+		parentCtx:                        parentCtx,
+		poolAndModelsMu:                  sync.RWMutex{},
+		models:                           make(map[string]*v1alpha2.InferenceModel),
+		pods:                             &sync.Map{},
+		pmc:                              pmc,
+		refreshMetricsInterval:           refreshMetricsInterval,
+		refreshPrometheusMetricsInterval: refreshPrometheusMetricsInterval,
 	}
+	store.flushingMetricsPeriodically(parentCtx)
 	return store
 }
 
 // Used for test only
-func NewFakeDatastore(pods []*PodMetrics, models []*v1alpha2.InferenceModel, pool *v1alpha2.InferencePool) Datastore {
-	store := NewDatastore()
-
-	for _, pod := range pods {
-		// Making a copy since in tests we may use the same global PodMetric across tests.
-		p := *pod
-		store.(*datastore).pods.Store(pod.NamespacedName, &p)
-	}
+func NewFakeDatastore(parentCtx context.Context, pmc PodMetricsClient, pods []*PodMetrics, models []*v1alpha2.InferenceModel, pool *v1alpha2.InferencePool) Datastore {
+	store := NewDatastore(parentCtx, pmc, time.Millisecond, time.Millisecond)
 
 	for _, m := range models {
 		store.ModelSetIfOlder(m)
 	}
 
 	if pool != nil {
-		store.(*datastore).pool = pool
+		store.PoolSet(pool)
 	}
+
+	for _, pod := range pods {
+		// Making a copy since in tests we may use the same global PodMetric across tests.
+		p := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pod.NamespacedName.Name,
+				Namespace: pod.NamespacedName.Namespace,
+			},
+			Status: corev1.PodStatus{
+				PodIP: pod.Address,
+			},
+		}
+		store.PodUpdateOrAddIfNotExist(parentCtx, p)
+	}
+
 	return store
 }
 
 type datastore struct {
+	// parentCtx controls the lifecycle of the background metrics goroutines that spawn up by the datastore.
+	parentCtx context.Context
 	// poolAndModelsMu is used to synchronize access to pool and the models map.
 	poolAndModelsMu sync.RWMutex
 	pool            *v1alpha2.InferencePool
 	// key: InferenceModel.Spec.ModelName, value: *InferenceModel
 	models map[string]*v1alpha2.InferenceModel
-	// key: types.NamespacedName, value: *PodMetrics
+	// key: types.NamespacedName, value: *PodMetricsRefresher
 	pods *sync.Map
+
+	pmc                                                      PodMetricsClient
+	refreshMetricsInterval, refreshPrometheusMetricsInterval time.Duration
+}
+
+func (ds *datastore) flushingMetricsPeriodically(ctx context.Context) {
+	logger := log.FromContext(ctx)
+
+	// Periodically flush prometheus metrics for inference pool
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				logger.V(logutil.DEFAULT).Info("Shutting down prometheus metrics thread")
+				return
+			default:
+				time.Sleep(ds.refreshPrometheusMetricsInterval)
+				ds.flushPrometheusMetricsOnce(logger)
+			}
+		}
+	}()
+
+	// Periodically print out the pods and metrics for DEBUGGING.
+	if logger := logger.V(logutil.DEBUG); logger.Enabled() {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					logger.V(logutil.DEFAULT).Info("Shutting down metrics logger thread")
+					return
+				default:
+					time.Sleep(5 * time.Second)
+					logger.Info("Current Pods and metrics gathered", "fresh metrics", ds.podGet(FreshMetricsPredicate), "stale metrics", ds.podGet(StaleMetricsPredicate))
+				}
+			}
+		}()
+	}
+}
+
+func (ds *datastore) flushPrometheusMetricsOnce(logger logr.Logger) {
+	pool, err := ds.PoolGet()
+	if err != nil {
+		// No inference pool or not initialize.
+		logger.V(logutil.VERBOSE).Info("pool is not initialized, skipping flushing metrics")
+		return
+	}
+
+	var kvCacheTotal float64
+	var queueTotal int
+
+	podMetrics := ds.PodGetAll()
+	logger.V(logutil.VERBOSE).Info("Flushing Prometheus Metrics", "ReadyPods", len(podMetrics))
+	if len(podMetrics) == 0 {
+		return
+	}
+
+	for _, pod := range podMetrics {
+		kvCacheTotal += pod.KVCacheUsagePercent
+		queueTotal += pod.WaitingQueueSize
+	}
+
+	podTotalCount := len(podMetrics)
+	metrics.RecordInferencePoolAvgKVCache(pool.Name, kvCacheTotal/float64(podTotalCount))
+	metrics.RecordInferencePoolAvgQueueSize(pool.Name, float64(queueTotal/podTotalCount))
 }
 
 func (ds *datastore) Clear() {
@@ -227,43 +311,46 @@ func (ds *datastore) ModelGetAll() []*v1alpha2.InferenceModel {
 }
 
 // /// Pods/endpoints APIs ///
-func (ds *datastore) PodUpdateMetricsIfExist(namespacedName types.NamespacedName, m *Metrics) bool {
-	if val, ok := ds.pods.Load(namespacedName); ok {
-		existing := val.(*PodMetrics)
-		existing.Metrics = *m
-		return true
-	}
-	return false
-}
-
-func (ds *datastore) PodGet(namespacedName types.NamespacedName) *PodMetrics {
-	val, ok := ds.pods.Load(namespacedName)
-	if ok {
-		return val.(*PodMetrics)
-	}
-	return nil
-}
 
 func (ds *datastore) PodGetAll() []*PodMetrics {
+	return ds.podGet(AllPodsPredicates)
+}
+
+func (ds *datastore) podGet(predicate PodPredicate) []*PodMetrics {
 	res := []*PodMetrics{}
 	fn := func(k, v any) bool {
-		res = append(res, v.(*PodMetrics))
+		pm := v.(*PodMetricsRefresher).GetPodMetrics()
+		if predicate(pm) {
+			res = append(res, pm)
+		}
 		return true
 	}
 	ds.pods.Range(fn)
 	return res
 }
 
-func (ds *datastore) PodRange(f func(key, value any) bool) {
-	ds.pods.Range(f)
+type PodPredicate func(*PodMetrics) bool
+
+var AllPodsPredicates = func(pm *PodMetrics) bool {
+	return true
 }
 
-func (ds *datastore) PodDelete(namespacedName types.NamespacedName) {
-	ds.pods.Delete(namespacedName)
+var FreshMetricsPredicate = func(pm *PodMetrics) bool {
+	return time.Since(pm.UpdateTime) <= metricsValidityPeriod
 }
 
-func (ds *datastore) PodUpdateOrAddIfNotExist(pod *corev1.Pod) bool {
-	new := &PodMetrics{
+var StaleMetricsPredicate = func(pm *PodMetrics) bool {
+	return time.Since(pm.UpdateTime) > metricsValidityPeriod
+}
+
+func (ds *datastore) PodUpdateOrAddIfNotExist(ctx context.Context, pod *corev1.Pod) bool {
+	log.FromContext(ds.parentCtx).V(logutil.VERBOSE).Info("Adding pod", "pod", pod.Name)
+	pool, err := ds.PoolGet()
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to get the pool, this should never happen")
+		return false
+	}
+	pm := &PodMetrics{
 		Pod: Pod{
 			NamespacedName: types.NamespacedName{
 				Name:      pod.Name,
@@ -271,22 +358,20 @@ func (ds *datastore) PodUpdateOrAddIfNotExist(pod *corev1.Pod) bool {
 			},
 			Address: pod.Status.PodIP,
 		},
-		Metrics: Metrics{
-			ActiveModels: make(map[string]int),
-		},
+		Metrics: NewMetrics(),
 	}
-	existing, ok := ds.pods.Load(new.NamespacedName)
-	if !ok {
-		ds.pods.Store(new.NamespacedName, new)
-		return true
-	}
-
+	pmr := NewPodMetricsRefresher(ds.parentCtx, ds.pmc, pm, pool.Spec.TargetPortNumber, ds.refreshMetricsInterval)
+	existingOrNew, ok := ds.pods.LoadOrStore(pm.NamespacedName, pmr)
+	existingOrNewPMR := existingOrNew.(*PodMetricsRefresher)
+	// It's safe to call start() multiple times.
+	existingOrNewPMR.start()
 	// Update pod properties if anything changed.
-	existing.(*PodMetrics).Pod = new.Pod
-	return false
+	existingOrNewPMR.UpdatePod(pm.Pod)
+	return ok
 }
 
 func (ds *datastore) PodResyncAll(ctx context.Context, ctrlClient client.Client) {
+	logger := log.FromContext(ctx)
 	// Pool must exist to invoke this function.
 	pool, _ := ds.PoolGet()
 	podList := &corev1.PodList{}
@@ -302,23 +387,28 @@ func (ds *datastore) PodResyncAll(ctx context.Context, ctrlClient client.Client)
 	for _, pod := range podList.Items {
 		if podIsReady(&pod) {
 			activePods[pod.Name] = true
-			ds.PodUpdateOrAddIfNotExist(&pod)
+			ds.PodUpdateOrAddIfNotExist(ctx, &pod)
 		}
 	}
 
 	// Remove pods that don't belong to the pool or not ready any more.
 	deleteFn := func(k, v any) bool {
-		pm := v.(*PodMetrics)
-		if exist := activePods[pm.NamespacedName.Name]; !exist {
-			ds.pods.Delete(pm.NamespacedName)
+		pmr := v.(*PodMetricsRefresher)
+		if exist := activePods[pmr.GetPodMetrics().Pod.NamespacedName.Name]; !exist {
+			logger.V(logutil.VERBOSE).Info("Removing pod", "pod", pmr.GetPodMetrics().Pod)
+			ds.PodDelete(pmr.GetPodMetrics().Pod.NamespacedName)
 		}
 		return true
 	}
 	ds.pods.Range(deleteFn)
 }
 
-func (ds *datastore) PodDeleteAll() {
-	ds.pods.Clear()
+func (ds *datastore) PodDelete(namespacedName types.NamespacedName) {
+	v, ok := ds.pods.LoadAndDelete(namespacedName)
+	if ok {
+		pmr := v.(*PodMetricsRefresher)
+		pmr.stop()
+	}
 }
 
 func selectorFromInferencePoolSelector(selector map[v1alpha2.LabelKey]v1alpha2.LabelValue) labels.Selector {

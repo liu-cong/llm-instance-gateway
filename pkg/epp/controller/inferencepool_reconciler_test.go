@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -92,7 +93,7 @@ func TestInferencePoolReconciler(t *testing.T) {
 	req := ctrl.Request{NamespacedName: namespacedName}
 	ctx := context.Background()
 
-	datastore := datastore.NewDatastore()
+	datastore := datastore.NewDatastore(ctx, &datastore.FakePodMetricsClient{}, time.Second, time.Second)
 	inferencePoolReconciler := &InferencePoolReconciler{PoolNamespacedName: namespacedName, Client: fakeClient, Datastore: datastore}
 
 	// Step 1: Inception, only ready pods matching pool1 are added to the store.
