@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	"sigs.k8s.io/gateway-api-inference-extension/internal/runnable"
+	backendmetrics "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend/metrics"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend/vllm"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
@@ -142,8 +143,9 @@ func run() error {
 
 	ctx := ctrl.SetupSignalHandler()
 
+	pmf := backendmetrics.NewPodMetricsFactory(&vllm.PodMetricsClientImpl{}, *refreshMetricsInterval)
 	// Setup runner.
-	datastore := datastore.NewDatastore(ctx, &vllm.PodMetricsClientImpl{}, *refreshMetricsInterval, *refreshPrometheusMetricsInterval)
+	datastore := datastore.NewDatastore(ctx, pmf)
 	serverRunner := &runserver.ExtProcServerRunner{
 		GrpcPort:                                 *grpcPort,
 		DestinationEndpointHintMetadataNamespace: *destinationEndpointHintMetadataNamespace,
@@ -154,6 +156,7 @@ func run() error {
 		SecureServing:                            *secureServing,
 		CertPath:                                 *certPath,
 		UseStreaming:                             useStreamingServer,
+		RefreshPrometheusMetricsInterval:         *refreshPrometheusMetricsInterval,
 	}
 	if err := serverRunner.SetupWithManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "Failed to setup ext-proc controllers")

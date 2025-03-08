@@ -14,16 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package test
+package testing
 
 import (
 	"encoding/json"
-	"fmt"
 
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 )
 
@@ -45,16 +42,4 @@ func GenerateRequest(logger logr.Logger, prompt, model string) *extProcPb.Proces
 		},
 	}
 	return req
-}
-
-func FakePodMetrics(index int, metrics datastore.Metrics) *datastore.PodMetrics {
-	address := fmt.Sprintf("192.168.1.%d", index+1)
-	pod := datastore.PodMetrics{
-		Pod: datastore.Pod{
-			NamespacedName: types.NamespacedName{Name: fmt.Sprintf("pod-%v", index), Namespace: "default"},
-			Address:        address,
-		},
-		Metrics: metrics,
-	}
-	return &pod
 }

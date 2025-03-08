@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
+	backendmetrics "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend/metrics"
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 	testutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/testing"
 )
@@ -70,7 +71,8 @@ func TestPool(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			datastore := NewDatastore(context.Background(), &FakePodMetricsClient{}, time.Second, time.Second)
+			pmf := backendmetrics.NewPodMetricsFactory(&backendmetrics.FakePodMetricsClient{}, time.Second)
+			datastore := NewDatastore(context.Background(), pmf)
 			datastore.PoolSet(tt.inferencePool)
 			gotPool, gotErr := datastore.PoolGet()
 			if diff := cmp.Diff(tt.wantErr, gotErr, cmpopts.EquateErrors()); diff != "" {
@@ -201,7 +203,8 @@ func TestModel(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ds := NewFakeDatastore(t.Context(), &FakePodMetricsClient{}, nil, test.existingModels, nil)
+			pmf := backendmetrics.NewPodMetricsFactory(&backendmetrics.FakePodMetricsClient{}, time.Second)
+			ds := NewFakeDatastore(t.Context(), pmf, nil, test.existingModels, &v1alpha2.InferencePool{})
 			gotOpResult := test.op(ds)
 			if gotOpResult != test.wantOpResult {
 				t.Errorf("Unexpected operation result, want: %v, got: %v", test.wantOpResult, gotOpResult)
@@ -323,42 +326,32 @@ func pointer(v int32) *int32 {
 }
 
 var (
-	pod1 = &PodMetrics{
-		Pod: Pod{
-			NamespacedName: types.NamespacedName{
-				Name: "pod1",
-			},
+	pod1 = &backendmetrics.Pod{
+		NamespacedName: types.NamespacedName{
+			Name: "pod1",
 		},
 	}
-	pod1WithMetrics = &PodMetrics{
-		Pod: pod1.Pod,
-		Metrics: Metrics{
-			WaitingQueueSize:    0,
-			KVCacheUsagePercent: 0.2,
-			MaxActiveModels:     2,
-			ActiveModels: map[string]int{
-				"foo": 1,
-				"bar": 1,
-			},
+	pod1Metrics = &backendmetrics.Metrics{
+		WaitingQueueSize:    0,
+		KVCacheUsagePercent: 0.2,
+		MaxActiveModels:     2,
+		ActiveModels: map[string]int{
+			"foo": 1,
+			"bar": 1,
 		},
 	}
-	pod2 = &PodMetrics{
-		Pod: Pod{
-			NamespacedName: types.NamespacedName{
-				Name: "pod2",
-			},
+	pod2 = &backendmetrics.Pod{
+		NamespacedName: types.NamespacedName{
+			Name: "pod2",
 		},
 	}
-	pod2WithMetrics = &PodMetrics{
-		Pod: pod2.Pod,
-		Metrics: Metrics{
-			WaitingQueueSize:    1,
-			KVCacheUsagePercent: 0.2,
-			MaxActiveModels:     2,
-			ActiveModels: map[string]int{
-				"foo1": 1,
-				"bar1": 1,
-			},
+	pod2Metrics = &backendmetrics.Metrics{
+		WaitingQueueSize:    1,
+		KVCacheUsagePercent: 0.2,
+		MaxActiveModels:     2,
+		ActiveModels: map[string]int{
+			"foo1": 1,
+			"bar1": 1,
 		},
 	}
 
@@ -372,54 +365,51 @@ var (
 func TestMetrics(t *testing.T) {
 	tests := []struct {
 		name      string
-		pmc       PodMetricsClient
-		storePods []*PodMetrics
-		want      []*PodMetrics
+		pmc       backendmetrics.PodMetricsClient
+		storePods []*backendmetrics.Pod
+		want      []*backendmetrics.Metrics
 	}{
 		{
 			name: "Probing metrics success",
-			pmc: &FakePodMetricsClient{
-				Res: map[types.NamespacedName]*PodMetrics{
-					pod1.NamespacedName: pod1WithMetrics,
-					pod2.NamespacedName: pod2WithMetrics,
+			pmc: &backendmetrics.FakePodMetricsClient{
+				Res: map[types.NamespacedName]*backendmetrics.Metrics{
+					pod1.NamespacedName: pod1Metrics,
+					pod2.NamespacedName: pod2Metrics,
 				},
 			},
-			storePods: []*PodMetrics{pod1, pod2},
-			want:      []*PodMetrics{pod1WithMetrics, pod2WithMetrics},
+			storePods: []*backendmetrics.Pod{pod1, pod2},
+			want:      []*backendmetrics.Metrics{pod1Metrics, pod2Metrics},
 		},
 		{
 			name: "Only pods in are probed",
-			pmc: &FakePodMetricsClient{
-				Res: map[types.NamespacedName]*PodMetrics{
-					pod1.NamespacedName: pod1WithMetrics,
-					pod2.NamespacedName: pod2WithMetrics,
+			pmc: &backendmetrics.FakePodMetricsClient{
+				Res: map[types.NamespacedName]*backendmetrics.Metrics{
+					pod1.NamespacedName: pod1Metrics,
+					pod2.NamespacedName: pod2Metrics,
 				},
 			},
-			storePods: []*PodMetrics{pod1},
-			want:      []*PodMetrics{pod1WithMetrics},
+			storePods: []*backendmetrics.Pod{pod1},
+			want:      []*backendmetrics.Metrics{pod1Metrics},
 		},
 		{
 			name: "Probing metrics error",
-			pmc: &FakePodMetricsClient{
+			pmc: &backendmetrics.FakePodMetricsClient{
 				Err: map[types.NamespacedName]error{
 					pod2.NamespacedName: errors.New("injected error"),
 				},
-				Res: map[types.NamespacedName]*PodMetrics{
-					pod1.NamespacedName: pod1WithMetrics,
+				Res: map[types.NamespacedName]*backendmetrics.Metrics{
+					pod1.NamespacedName: pod1Metrics,
 				},
 			},
-			storePods: []*PodMetrics{pod1, pod2},
-			want: []*PodMetrics{
-				pod1WithMetrics,
+			storePods: []*backendmetrics.Pod{pod1, pod2},
+			want: []*backendmetrics.Metrics{
+				pod1Metrics,
 				// Failed to fetch pod2 metrics so it remains the default values.
 				{
-					Pod: Pod{NamespacedName: pod2.NamespacedName},
-					Metrics: Metrics{
-						ActiveModels:        map[string]int{},
-						WaitingQueueSize:    0,
-						KVCacheUsagePercent: 0,
-						MaxActiveModels:     0,
-					},
+					ActiveModels:        map[string]int{},
+					WaitingQueueSize:    0,
+					KVCacheUsagePercent: 0,
+					MaxActiveModels:     0,
 				},
 			},
 		},
@@ -429,11 +419,16 @@ func TestMetrics(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			ds := NewFakeDatastore(ctx, test.pmc, test.storePods, nil, inferencePool)
+			pmf := backendmetrics.NewPodMetricsFactory(test.pmc, time.Millisecond)
+			ds := NewFakeDatastore(ctx, pmf, test.storePods, nil, inferencePool)
 
 			assert.EventuallyWithT(t, func(t *assert.CollectT) {
-				metrics := ds.PodGetAll()
-				diff := cmp.Diff(test.want, metrics, cmpopts.IgnoreFields(Metrics{}, "UpdateTime"), cmpopts.SortSlices(func(a, b *PodMetrics) bool {
+				got := ds.PodGetAll()
+				metrics := []*backendmetrics.Metrics{}
+				for _, one := range got {
+					metrics = append(metrics, one.GetMetrics())
+				}
+				diff := cmp.Diff(test.want, metrics, cmpopts.IgnoreFields(backendmetrics.Metrics{}, "UpdateTime"), cmpopts.SortSlices(func(a, b *backendmetrics.Metrics) bool {
 					return a.String() < b.String()
 				}))
 				assert.Equal(t, "", diff, "Unexpected diff (+got/-want)")

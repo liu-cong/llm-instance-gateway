@@ -31,9 +31,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/gateway-api-inference-extension/internal/runnable"
 	tlsutil "sigs.k8s.io/gateway-api-inference-extension/internal/tls"
+	backendmetrics "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend/metrics"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/controller"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/handlers"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/scheduling"
 )
 
@@ -48,11 +50,12 @@ type ExtProcServerRunner struct {
 	SecureServing                            bool
 	CertPath                                 string
 	UseStreaming                             bool
+	RefreshPrometheusMetricsInterval         time.Duration
 
 	// This should only be used in tests. We won't need this once we don't inject pods into the
 	// datastore.
 	// TODO:(https://github.com/kubernetes-sigs/gateway-api-inference-extension/issues/432) Cleanup
-	TestPodMetricsClient *datastore.FakePodMetricsClient
+	TestPodMetricsClient *backendmetrics.FakePodMetricsClient
 }
 
 // Default values for CLI flags in main
@@ -120,6 +123,8 @@ func (r *ExtProcServerRunner) SetupWithManager(ctx context.Context, mgr ctrl.Man
 // The runnable implements LeaderElectionRunnable with leader election disabled.
 func (r *ExtProcServerRunner) AsRunnable(logger logr.Logger) manager.Runnable {
 	return runnable.NoLeaderElection(manager.RunnableFunc(func(ctx context.Context) error {
+		backendmetrics.PrintMetricsForDebugging(ctx, r.Datastore)
+		metrics.FlushMetricsPeriodically(ctx, r.Datastore, r.RefreshPrometheusMetricsInterval)
 		var srv *grpc.Server
 		if r.SecureServing {
 			var cert tls.Certificate

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package datastore
+package metrics
 
 import (
 	"context"
@@ -27,31 +27,48 @@ import (
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 )
 
+// FakePodMetrics is an implementation of PodMetrics that doesn't run the async refresh loop.
+type FakePodMetrics struct {
+	Pod     *Pod
+	Metrics *Metrics
+}
+
+func (fpm *FakePodMetrics) GetPod() *Pod {
+	return fpm.Pod
+}
+func (fpm *FakePodMetrics) GetMetrics() *Metrics {
+	return fpm.Metrics
+}
+func (fpm *FakePodMetrics) UpdatePod(pod *Pod) {
+	fpm.Pod = pod
+}
+func (fpm *FakePodMetrics) StopRefreshLoop() {} // noop
+
 type FakePodMetricsClient struct {
 	errMu sync.RWMutex
 	Err   map[types.NamespacedName]error
 	resMu sync.RWMutex
-	Res   map[types.NamespacedName]*PodMetrics
+	Res   map[types.NamespacedName]*Metrics
 }
 
-func (f *FakePodMetricsClient) FetchMetrics(ctx context.Context, existing *PodMetrics, port int32) (*PodMetrics, error) {
+func (f *FakePodMetricsClient) FetchMetrics(ctx context.Context, pod *Pod, existing *Metrics, port int32) (*Metrics, error) {
 	f.errMu.RLock()
-	err, ok := f.Err[existing.NamespacedName]
+	err, ok := f.Err[pod.NamespacedName]
 	f.errMu.RUnlock()
 	if ok {
 		return nil, err
 	}
 	f.resMu.RLock()
-	res, ok := f.Res[existing.NamespacedName]
+	res, ok := f.Res[pod.NamespacedName]
 	f.resMu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("no pod found: %v", existing.NamespacedName)
+		return nil, fmt.Errorf("no pod found: %v", pod.NamespacedName)
 	}
 	log.FromContext(ctx).V(logutil.VERBOSE).Info("Fetching metrics for pod", "existing", existing, "new", res)
 	return res.Clone(), nil
 }
 
-func (f *FakePodMetricsClient) SetRes(new map[types.NamespacedName]*PodMetrics) {
+func (f *FakePodMetricsClient) SetRes(new map[types.NamespacedName]*Metrics) {
 	f.resMu.Lock()
 	defer f.resMu.Unlock()
 	f.Res = new
