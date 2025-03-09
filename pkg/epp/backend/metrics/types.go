@@ -24,6 +24,7 @@ import (
 	"time"
 	"unsafe"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -40,9 +41,9 @@ type PodMetricsFactory struct {
 	refreshMetricsInterval time.Duration
 }
 
-func (f *PodMetricsFactory) NewPodMetrics(parentCtx context.Context, pod *Pod, port int32) PodMetrics {
+func (f *PodMetricsFactory) NewPodMetrics(parentCtx context.Context, in *corev1.Pod, port int32) PodMetrics {
 	pm := &podMetrics{
-		pod:        unsafe.Pointer(pod),
+		pod:        unsafe.Pointer(toInternalPod(in)),
 		metrics:    unsafe.Pointer(newMetrics()),
 		pmc:        f.pmc,
 		targetPort: port,
@@ -59,7 +60,7 @@ func (f *PodMetricsFactory) NewPodMetrics(parentCtx context.Context, pod *Pod, p
 type PodMetrics interface {
 	GetPod() *Pod
 	GetMetrics() *Metrics
-	UpdatePod(*Pod)
+	UpdatePod(*corev1.Pod)
 	StopRefreshLoop()
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
@@ -204,7 +205,11 @@ func TestModel(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			pmf := backendmetrics.NewPodMetricsFactory(&backendmetrics.FakePodMetricsClient{}, time.Second)
-			ds := NewFakeDatastore(t.Context(), pmf, nil, test.existingModels, &v1alpha2.InferencePool{})
+			ds := NewDatastore(t.Context(), pmf)
+			for _, m := range test.existingModels {
+				ds.ModelSetIfOlder(m)
+			}
+
 			gotOpResult := test.op(ds)
 			if gotOpResult != test.wantOpResult {
 				t.Errorf("Unexpected operation result, want: %v, got: %v", test.wantOpResult, gotOpResult)
@@ -326,8 +331,8 @@ func pointer(v int32) *int32 {
 }
 
 var (
-	pod1 = &backendmetrics.Pod{
-		NamespacedName: types.NamespacedName{
+	pod1 = &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: "pod1",
 		},
 	}
@@ -340,8 +345,8 @@ var (
 			"bar": 1,
 		},
 	}
-	pod2 = &backendmetrics.Pod{
-		NamespacedName: types.NamespacedName{
+	pod2 = &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: "pod2",
 		},
 	}
@@ -354,8 +359,9 @@ var (
 			"bar1": 1,
 		},
 	}
-
-	inferencePool = &v1alpha2.InferencePool{
+	pod1NamespacedName = types.NamespacedName{Name: pod1.Name, Namespace: pod1.Namespace}
+	pod2NamespacedName = types.NamespacedName{Name: pod2.Name, Namespace: pod2.Namespace}
+	inferencePool      = &v1alpha2.InferencePool{
 		Spec: v1alpha2.InferencePoolSpec{
 			TargetPortNumber: 8000,
 		},
@@ -366,42 +372,42 @@ func TestMetrics(t *testing.T) {
 	tests := []struct {
 		name      string
 		pmc       backendmetrics.PodMetricsClient
-		storePods []*backendmetrics.Pod
+		storePods []*corev1.Pod
 		want      []*backendmetrics.Metrics
 	}{
 		{
 			name: "Probing metrics success",
 			pmc: &backendmetrics.FakePodMetricsClient{
 				Res: map[types.NamespacedName]*backendmetrics.Metrics{
-					pod1.NamespacedName: pod1Metrics,
-					pod2.NamespacedName: pod2Metrics,
+					pod1NamespacedName: pod1Metrics,
+					pod2NamespacedName: pod2Metrics,
 				},
 			},
-			storePods: []*backendmetrics.Pod{pod1, pod2},
+			storePods: []*corev1.Pod{pod1, pod2},
 			want:      []*backendmetrics.Metrics{pod1Metrics, pod2Metrics},
 		},
 		{
 			name: "Only pods in are probed",
 			pmc: &backendmetrics.FakePodMetricsClient{
 				Res: map[types.NamespacedName]*backendmetrics.Metrics{
-					pod1.NamespacedName: pod1Metrics,
-					pod2.NamespacedName: pod2Metrics,
+					pod1NamespacedName: pod1Metrics,
+					pod2NamespacedName: pod2Metrics,
 				},
 			},
-			storePods: []*backendmetrics.Pod{pod1},
+			storePods: []*corev1.Pod{pod1},
 			want:      []*backendmetrics.Metrics{pod1Metrics},
 		},
 		{
 			name: "Probing metrics error",
 			pmc: &backendmetrics.FakePodMetricsClient{
 				Err: map[types.NamespacedName]error{
-					pod2.NamespacedName: errors.New("injected error"),
+					pod2NamespacedName: errors.New("injected error"),
 				},
 				Res: map[types.NamespacedName]*backendmetrics.Metrics{
-					pod1.NamespacedName: pod1Metrics,
+					pod1NamespacedName: pod1Metrics,
 				},
 			},
-			storePods: []*backendmetrics.Pod{pod1, pod2},
+			storePods: []*corev1.Pod{pod1, pod2},
 			want: []*backendmetrics.Metrics{
 				pod1Metrics,
 				// Failed to fetch pod2 metrics so it remains the default values.
@@ -420,8 +426,11 @@ func TestMetrics(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			pmf := backendmetrics.NewPodMetricsFactory(test.pmc, time.Millisecond)
-			ds := NewFakeDatastore(ctx, pmf, test.storePods, nil, inferencePool)
-
+			ds := NewDatastore(ctx, pmf)
+			ds.PoolSet(inferencePool)
+			for _, pod := range test.storePods {
+				ds.PodUpdateOrAddIfNotExist(pod, inferencePool)
+			}
 			assert.EventuallyWithT(t, func(t *assert.CollectT) {
 				got := ds.PodGetAll()
 				metrics := []*backendmetrics.Metrics{}

@@ -20,7 +20,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 )
 
@@ -31,11 +34,29 @@ const (
 )
 
 type Datastore interface {
+	PoolGet() (*v1alpha2.InferencePool, error)
+	// PodMetrics operations
+	// PodGetAll returns all pods and metrics, including fresh and stale.
+	PodGetAll() []PodMetrics
 	PodList(func(PodMetrics) bool) []PodMetrics
 }
 
-func PrintMetricsForDebugging(ctx context.Context, datastore Datastore) {
+func LogMetricsPeriodically(ctx context.Context, datastore Datastore, refreshPrometheusMetricsInterval time.Duration) {
 	logger := log.FromContext(ctx)
+
+	// Periodically flush prometheus metrics for inference pool
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				logger.V(logutil.DEFAULT).Info("Shutting down prometheus metrics thread")
+				return
+			default:
+				time.Sleep(refreshPrometheusMetricsInterval)
+				flushPrometheusMetricsOnce(logger, datastore)
+			}
+		}
+	}()
 
 	// Periodically print out the pods and metrics for DEBUGGING.
 	if logger := logger.V(logutil.DEBUG); logger.Enabled() {
@@ -58,4 +79,31 @@ func PrintMetricsForDebugging(ctx context.Context, datastore Datastore) {
 			}
 		}()
 	}
+}
+
+func flushPrometheusMetricsOnce(logger logr.Logger, datastore Datastore) {
+	pool, err := datastore.PoolGet()
+	if err != nil {
+		// No inference pool or not initialize.
+		logger.V(logutil.VERBOSE).Info("pool is not initialized, skipping flushing metrics")
+		return
+	}
+
+	var kvCacheTotal float64
+	var queueTotal int
+
+	podMetrics := datastore.PodGetAll()
+	logger.V(logutil.VERBOSE).Info("Flushing Prometheus Metrics", "ReadyPods", len(podMetrics))
+	if len(podMetrics) == 0 {
+		return
+	}
+
+	for _, pod := range podMetrics {
+		kvCacheTotal += pod.GetMetrics().KVCacheUsagePercent
+		queueTotal += pod.GetMetrics().WaitingQueueSize
+	}
+
+	podTotalCount := len(podMetrics)
+	metrics.RecordInferencePoolAvgKVCache(pool.Name, kvCacheTotal/float64(podTotalCount))
+	metrics.RecordInferencePoolAvgQueueSize(pool.Name, float64(queueTotal/podTotalCount))
 }

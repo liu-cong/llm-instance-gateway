@@ -24,6 +24,8 @@ import (
 	"unsafe"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 )
@@ -58,8 +60,18 @@ func (pm *podMetrics) GetMetrics() *Metrics {
 	return (*Metrics)(atomic.LoadPointer(&pm.metrics))
 }
 
-func (pm *podMetrics) UpdatePod(pod *Pod) {
-	atomic.StorePointer(&pm.pod, unsafe.Pointer(pod))
+func (pm *podMetrics) UpdatePod(in *corev1.Pod) {
+	atomic.StorePointer(&pm.pod, unsafe.Pointer(toInternalPod(in)))
+}
+
+func toInternalPod(in *corev1.Pod) *Pod {
+	return &Pod{
+		NamespacedName: types.NamespacedName{
+			Name:      in.Name,
+			Namespace: in.Namespace,
+		},
+		Address: in.Status.PodIP,
+	}
 }
 
 // start starts a goroutine exactly once to periodically update metrics. The goroutine will be

@@ -25,14 +25,12 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
 	backendmetrics "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend/metrics"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 )
 
@@ -42,7 +40,6 @@ const (
 
 var (
 	errPoolNotSynced = errors.New("InferencePool is not initialized in data store")
-	once             sync.Once
 )
 
 // The datastore is a local cache of relevant data for the given InferencePool (currently all pulled from k8s-api)
@@ -84,33 +81,6 @@ func NewDatastore(parentCtx context.Context, pmf *backendmetrics.PodMetricsFacto
 	return store
 }
 
-// Used for test only
-func NewFakeDatastore(parentCtx context.Context, pmf *backendmetrics.PodMetricsFactory, pods []*backendmetrics.Pod, models []*v1alpha2.InferenceModel, pool *v1alpha2.InferencePool) Datastore {
-	store := NewDatastore(parentCtx, pmf)
-
-	for _, m := range models {
-		store.ModelSetIfOlder(m)
-	}
-
-	store.PoolSet(pool)
-
-	for _, pod := range pods {
-		// Making a copy since in tests we may use the same global PodMetric across tests.
-		p := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      pod.NamespacedName.Name,
-				Namespace: pod.NamespacedName.Namespace,
-			},
-			Status: corev1.PodStatus{
-				PodIP: pod.Address,
-			},
-		}
-		store.PodUpdateOrAddIfNotExist(p, pool)
-	}
-
-	return store
-}
-
 type datastore struct {
 	// parentCtx controls the lifecycle of the background metrics goroutines that spawn up by the datastore.
 	parentCtx context.Context
@@ -119,36 +89,9 @@ type datastore struct {
 	pool            *v1alpha2.InferencePool
 	// key: InferenceModel.Spec.ModelName, value: *InferenceModel
 	models map[string]*v1alpha2.InferenceModel
-	// key: types.NamespacedName, value: *backendmetrics.PodMetrics
+	// key: types.NamespacedName, value: backendmetrics.PodMetrics
 	pods *sync.Map
 	pmf  *backendmetrics.PodMetricsFactory
-}
-
-func (ds *datastore) flushPrometheusMetricsOnce(logger logr.Logger) {
-	pool, err := ds.PoolGet()
-	if err != nil {
-		// No inference pool or not initialize.
-		logger.V(logutil.VERBOSE).Info("pool is not initialized, skipping flushing metrics")
-		return
-	}
-
-	var kvCacheTotal float64
-	var queueTotal int
-
-	podMetrics := ds.PodGetAll()
-	logger.V(logutil.VERBOSE).Info("Flushing Prometheus Metrics", "ReadyPods", len(podMetrics))
-	if len(podMetrics) == 0 {
-		return
-	}
-
-	for _, pod := range podMetrics {
-		kvCacheTotal += pod.GetMetrics().KVCacheUsagePercent
-		queueTotal += pod.GetMetrics().WaitingQueueSize
-	}
-
-	podTotalCount := len(podMetrics)
-	metrics.RecordInferencePoolAvgKVCache(pool.Name, kvCacheTotal/float64(podTotalCount))
-	metrics.RecordInferencePoolAvgQueueSize(pool.Name, float64(queueTotal/podTotalCount))
 }
 
 func (ds *datastore) Clear() {
@@ -288,24 +231,20 @@ func (ds *datastore) PodList(predicate func(backendmetrics.PodMetrics) bool) []b
 }
 
 func (ds *datastore) PodUpdateOrAddIfNotExist(pod *corev1.Pod, pool *v1alpha2.InferencePool) bool {
-	bp := &backendmetrics.Pod{
-		NamespacedName: types.NamespacedName{
-			Name:      pod.Name,
-			Namespace: pod.Namespace,
-		},
-		Address: pod.Status.PodIP,
+	namespacedName := types.NamespacedName{
+		Name:      pod.Name,
+		Namespace: pod.Namespace,
 	}
-
 	var pm backendmetrics.PodMetrics
-	existing, ok := ds.pods.Load(bp.NamespacedName)
+	existing, ok := ds.pods.Load(namespacedName)
 	if !ok {
-		pm = ds.pmf.NewPodMetrics(ds.parentCtx, bp, pool.Spec.TargetPortNumber)
-		ds.pods.Store(bp.NamespacedName, pm)
+		pm = ds.pmf.NewPodMetrics(ds.parentCtx, pod, pool.Spec.TargetPortNumber)
+		ds.pods.Store(namespacedName, pm)
 	} else {
 		pm = existing.(backendmetrics.PodMetrics)
 	}
 	// Update pod properties if anything changed.
-	pm.UpdatePod(bp)
+	pm.UpdatePod(pod)
 	return ok
 }
 
