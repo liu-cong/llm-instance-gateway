@@ -95,15 +95,15 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 			req:  utiltesting.GenerateRequest(logger, "test1", "my-model"),
 			// pod-1 will be picked because it has relatively low queue size and low KV cache.
 			pods: map[backendmetrics.Pod]*backendmetrics.Metrics{
-				fakePod(0): &backendmetrics.Metrics{
+				fakePod(0): {
 					WaitingQueueSize:    3,
 					KVCacheUsagePercent: 0.2,
 				},
-				fakePod(1): &backendmetrics.Metrics{
+				fakePod(1): {
 					WaitingQueueSize:    0,
 					KVCacheUsagePercent: 0.1,
 				},
-				fakePod(2): &backendmetrics.Metrics{
+				fakePod(2): {
 					WaitingQueueSize:    10,
 					KVCacheUsagePercent: 0.2,
 				},
@@ -137,7 +137,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 			// pod-1 will be picked because it has relatively low queue size, with the requested
 			// model being active, and has low KV cache.
 			pods: map[backendmetrics.Pod]*backendmetrics.Metrics{
-				fakePod(0): &backendmetrics.Metrics{
+				fakePod(0): {
 					WaitingQueueSize:    0,
 					KVCacheUsagePercent: 0.2,
 					ActiveModels: map[string]int{
@@ -145,7 +145,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 						"bar": 1,
 					},
 				},
-				fakePod(1): &backendmetrics.Metrics{
+				fakePod(1): {
 					WaitingQueueSize:    0,
 					KVCacheUsagePercent: 0.1,
 					ActiveModels: map[string]int{
@@ -153,7 +153,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 						"sql-lora-1fdg2": 1,
 					},
 				},
-				fakePod(2): &backendmetrics.Metrics{
+				fakePod(2): {
 					WaitingQueueSize:    10,
 					KVCacheUsagePercent: 0.2,
 					ActiveModels: map[string]int{
@@ -192,7 +192,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 			// as it's above the affinity for queue size. Also is critical, so we should
 			// still honor request despite all queues > 5
 			pods: map[backendmetrics.Pod]*backendmetrics.Metrics{
-				fakePod(0): &backendmetrics.Metrics{
+				fakePod(0): {
 					WaitingQueueSize:    10,
 					KVCacheUsagePercent: 0.2,
 					ActiveModels: map[string]int{
@@ -200,7 +200,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 						"bar": 1,
 					},
 				},
-				fakePod(1): &backendmetrics.Metrics{
+				fakePod(1): {
 					WaitingQueueSize:    200,
 					KVCacheUsagePercent: 0.1,
 					ActiveModels: map[string]int{
@@ -208,7 +208,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 						"sql-lora-1fdg2": 1,
 					},
 				},
-				fakePod(2): &backendmetrics.Metrics{
+				fakePod(2): {
 					WaitingQueueSize:    6,
 					KVCacheUsagePercent: 0.2,
 					ActiveModels: map[string]int{
@@ -245,7 +245,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 			// no pods will be picked as all models are either above kv threshold,
 			// queue threshold, or both.
 			pods: map[backendmetrics.Pod]*backendmetrics.Metrics{
-				fakePod(0): &backendmetrics.Metrics{
+				fakePod(0): {
 					WaitingQueueSize:    6,
 					KVCacheUsagePercent: 0.2,
 					ActiveModels: map[string]int{
@@ -254,7 +254,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 						"sql-lora-1fdg3": 1,
 					},
 				},
-				fakePod(1): &backendmetrics.Metrics{
+				fakePod(1): {
 					WaitingQueueSize:    0,
 					KVCacheUsagePercent: 0.85,
 					ActiveModels: map[string]int{
@@ -262,7 +262,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 						"sql-lora-1fdg3": 1,
 					},
 				},
-				fakePod(2): &backendmetrics.Metrics{
+				fakePod(2): {
 					WaitingQueueSize:    10,
 					KVCacheUsagePercent: 0.9,
 					ActiveModels: map[string]int{
@@ -287,7 +287,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 			req:  utiltesting.GenerateRequest(logger, "test5", "sql-lora-sheddable"),
 			// pod 0 will be picked as all other models are above threshold
 			pods: map[backendmetrics.Pod]*backendmetrics.Metrics{
-				fakePod(0): &backendmetrics.Metrics{
+				fakePod(0): {
 					WaitingQueueSize:    4,
 					KVCacheUsagePercent: 0.2,
 					ActiveModels: map[string]int{
@@ -296,7 +296,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 						"sql-lora-1fdg3": 1,
 					},
 				},
-				fakePod(1): &backendmetrics.Metrics{
+				fakePod(1): {
 					WaitingQueueSize:    0,
 					KVCacheUsagePercent: 0.85,
 					ActiveModels: map[string]int{
@@ -304,7 +304,7 @@ func TestKubeInferenceModelRequest(t *testing.T) {
 						"sql-lora-1fdg3": 1,
 					},
 				},
-				fakePod(2): &backendmetrics.Metrics{
+				fakePod(2): {
 					WaitingQueueSize:    10,
 					KVCacheUsagePercent: 0.9,
 					ActiveModels: map[string]int{

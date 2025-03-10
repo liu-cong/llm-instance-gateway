@@ -192,11 +192,15 @@ func TestInferenceModelReconciler(t *testing.T) {
 				WithIndex(&v1alpha2.InferenceModel{}, datastore.ModelNameIndexKey, indexInferenceModelsByModelName).
 				Build()
 			pmf := backendmetrics.NewPodMetricsFactory(&backendmetrics.FakePodMetricsClient{}, time.Second)
-			datastore := datastore.NewFakeDatastore(t.Context(), pmf, nil, test.modelsInStore, pool)
+			ds := datastore.NewDatastore(t.Context(), pmf)
+			for _, m := range test.modelsInStore {
+				ds.ModelSetIfOlder(m)
+			}
+			ds.PoolSet(pool)
 			reconciler := &InferenceModelReconciler{
 				Client:             fakeClient,
 				Record:             record.NewFakeRecorder(10),
-				Datastore:          datastore,
+				Datastore:          ds,
 				PoolNamespacedName: types.NamespacedName{Name: pool.Name, Namespace: pool.Namespace},
 			}
 			if test.incomingReq == nil {
@@ -213,11 +217,11 @@ func TestInferenceModelReconciler(t *testing.T) {
 				t.Errorf("Unexpected result diff (+got/-want): %s", diff)
 			}
 
-			if len(test.wantModels) != len(datastore.ModelGetAll()) {
-				t.Errorf("Unexpected; want: %d, got:%d", len(test.wantModels), len(datastore.ModelGetAll()))
+			if len(test.wantModels) != len(ds.ModelGetAll()) {
+				t.Errorf("Unexpected; want: %d, got:%d", len(test.wantModels), len(ds.ModelGetAll()))
 			}
 
-			if diff := diffStore(datastore, diffStoreParams{wantPool: pool, wantModels: test.wantModels}); diff != "" {
+			if diff := diffStore(ds, diffStoreParams{wantPool: pool, wantModels: test.wantModels}); diff != "" {
 				t.Errorf("Unexpected diff (+got/-want): %s", diff)
 			}
 
