@@ -35,11 +35,11 @@ const (
 )
 
 type podMetrics struct {
-	pod        unsafe.Pointer // stores a *Pod
-	metrics    unsafe.Pointer // stores a *Metrics
-	pmc        PodMetricsClient
-	targetPort int32 // metrics endpoint port in the pod
-	interval   time.Duration
+	pod      unsafe.Pointer // stores a *Pod
+	metrics  unsafe.Pointer // stores a *Metrics
+	pmc      PodMetricsClient
+	ds       Datastore
+	interval time.Duration
 
 	parentCtx context.Context
 	once      sync.Once // ensure the StartRefreshLoop is only called once.
@@ -101,9 +101,14 @@ func (pm *podMetrics) startRefreshLoop() {
 }
 
 func (pm *podMetrics) refreshMetrics() error {
+	pool, err := pm.ds.PoolGet()
+	if err != nil {
+		// No inference pool or not initialize.
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), fetchMetricsTimeout)
 	defer cancel()
-	updated, err := pm.pmc.FetchMetrics(ctx, pm.GetPod(), pm.GetMetrics(), pm.targetPort)
+	updated, err := pm.pmc.FetchMetrics(ctx, pm.GetPod(), pm.GetMetrics(), pool.Spec.TargetPortNumber)
 	if err != nil {
 		// As refresher is running in the background, it's possible that the pod is deleted but
 		// the refresh goroutine doesn't read the done channel yet. In this case, we just return nil.

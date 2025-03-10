@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
 )
 
 var (
@@ -59,8 +60,9 @@ func TestMetricsRefresh(t *testing.T) {
 	ctx := context.Background()
 	pmc := &FakePodMetricsClient{}
 	pmf := NewPodMetricsFactory(pmc, time.Millisecond)
+
 	// The refresher is initialized with empty metrics.
-	pm := pmf.NewPodMetrics(ctx, pod1, 8000)
+	pm := pmf.NewPodMetrics(ctx, pod1, &fakeDataStore{})
 
 	namespacedName := types.NamespacedName{Name: pod1.Name, Namespace: pod1.Namespace}
 	// Use SetRes to simulate an update of metrics from the pod.
@@ -77,4 +79,18 @@ func TestMetricsRefresh(t *testing.T) {
 	pmc.SetRes(map[types.NamespacedName]*Metrics{namespacedName: updated})
 	// Still expect the same condition (no metrics update).
 	assert.EventuallyWithT(t, condition, time.Second, time.Millisecond)
+}
+
+type fakeDataStore struct{}
+
+func (f *fakeDataStore) PoolGet() (*v1alpha2.InferencePool, error) {
+	return &v1alpha2.InferencePool{Spec: v1alpha2.InferencePoolSpec{TargetPortNumber: 8000}}, nil
+}
+func (f *fakeDataStore) PodGetAll() []PodMetrics {
+	// Not implemented.
+	return nil
+}
+func (f *fakeDataStore) PodList(func(PodMetrics) bool) []PodMetrics {
+	// Not implemented.
+	return nil
 }

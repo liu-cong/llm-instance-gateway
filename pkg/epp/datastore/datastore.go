@@ -238,7 +238,7 @@ func (ds *datastore) PodUpdateOrAddIfNotExist(pod *corev1.Pod, pool *v1alpha2.In
 	var pm backendmetrics.PodMetrics
 	existing, ok := ds.pods.Load(namespacedName)
 	if !ok {
-		pm = ds.pmf.NewPodMetrics(ds.parentCtx, pod, pool.Spec.TargetPortNumber)
+		pm = ds.pmf.NewPodMetrics(ds.parentCtx, pod, ds)
 		ds.pods.Store(namespacedName, pm)
 	} else {
 		pm = existing.(backendmetrics.PodMetrics)

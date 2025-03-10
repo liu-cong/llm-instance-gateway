@@ -41,7 +41,9 @@ type Datastore interface {
 	PodList(func(PodMetrics) bool) []PodMetrics
 }
 
-func LogMetricsPeriodically(ctx context.Context, datastore Datastore, refreshPrometheusMetricsInterval time.Duration) {
+// StartMetricsLogger starts goroutines to 1) Print metrics debug logs if the DEBUG log level is
+// enabled; 2) flushes Prometheus metrics about the backend servers.
+func StartMetricsLogger(ctx context.Context, datastore Datastore, refreshPrometheusMetricsInterval time.Duration) {
 	logger := log.FromContext(ctx)
 
 	// Periodically flush prometheus metrics for inference pool

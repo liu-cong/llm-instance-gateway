@@ -41,17 +41,17 @@ type PodMetricsFactory struct {
 	refreshMetricsInterval time.Duration
 }
 
-func (f *PodMetricsFactory) NewPodMetrics(parentCtx context.Context, in *corev1.Pod, port int32) PodMetrics {
+func (f *PodMetricsFactory) NewPodMetrics(parentCtx context.Context, in *corev1.Pod, ds Datastore) PodMetrics {
 	pm := &podMetrics{
-		pod:        unsafe.Pointer(toInternalPod(in)),
-		metrics:    unsafe.Pointer(newMetrics()),
-		pmc:        f.pmc,
-		targetPort: port,
-		interval:   f.refreshMetricsInterval,
-		parentCtx:  parentCtx,
-		once:       sync.Once{},
-		done:       make(chan struct{}),
-		logger:     log.FromContext(parentCtx),
+		pod:       unsafe.Pointer(toInternalPod(in)),
+		metrics:   unsafe.Pointer(newMetrics()),
+		pmc:       f.pmc,
+		ds:        ds,
+		interval:  f.refreshMetricsInterval,
+		parentCtx: parentCtx,
+		once:      sync.Once{},
+		done:      make(chan struct{}),
+		logger:    log.FromContext(parentCtx),
 	}
 	pm.startRefreshLoop()
 	return pm

@@ -121,7 +121,7 @@ func (r *ExtProcServerRunner) SetupWithManager(ctx context.Context, mgr ctrl.Man
 // The runnable implements LeaderElectionRunnable with leader election disabled.
 func (r *ExtProcServerRunner) AsRunnable(logger logr.Logger) manager.Runnable {
 	return runnable.NoLeaderElection(manager.RunnableFunc(func(ctx context.Context) error {
-		backendmetrics.LogMetricsPeriodically(ctx, r.Datastore, r.RefreshPrometheusMetricsInterval)
+		backendmetrics.StartMetricsLogger(ctx, r.Datastore, r.RefreshPrometheusMetricsInterval)
 		var srv *grpc.Server
 		if r.SecureServing {
 			var cert tls.Certificate
