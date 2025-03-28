@@ -241,8 +241,11 @@ func (ds *datastore) PodUpdateOrAddIfNotExist(pod *corev1.Pod, pool *v1alpha2.In
 	} else {
 		pm = existing.(backendmetrics.PodMetrics)
 	}
-	// Update pod properties if anything changed.
-	pm.UpdatePod(pod)
+	// Update pod IP.
+	if pm.GetPod().Address != pod.Status.PodIP {
+		pm.UpdatePodAddress(pod.Status.PodIP)
+
+	}
 	return ok
 }
 

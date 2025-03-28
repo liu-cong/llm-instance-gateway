@@ -64,8 +64,10 @@ func (pm *podMetrics) GetMetrics() *Metrics {
 	return pm.metrics.Load()
 }
 
-func (pm *podMetrics) UpdatePod(in *corev1.Pod) {
-	pm.pod.Store(toInternalPod(in))
+func (pm *podMetrics) UpdatePodAddress(in string) {
+	new := pm.GetPod().Clone()
+	new.Address = in
+	pm.pod.Store(new)
 }
 
 func toInternalPod(in *corev1.Pod) *Pod {

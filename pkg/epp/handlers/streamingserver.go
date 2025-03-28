@@ -361,7 +361,7 @@ func (s *StreamingServer) HandleRequestBody(
 	if err != nil {
 		return reqCtx, errutil.Error{Code: errutil.InferencePoolResourceExhausted, Msg: fmt.Errorf("failed to find target pod: %w", err).Error()}
 	}
-	targetPod := target.GetPod()
+	targetPod := target.Pod
 
 	// Insert target endpoint to instruct Envoy to route requests to the specified target pod.
 	// Attach the port number

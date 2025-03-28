@@ -98,7 +98,7 @@ func (s *Server) HandleRequestBody(
 	if err != nil {
 		return nil, errutil.Error{Code: errutil.InferencePoolResourceExhausted, Msg: fmt.Errorf("failed to find target pod: %w", err).Error()}
 	}
-	targetPod := target.GetPod()
+	targetPod := target.Pod
 
 	logger.V(logutil.DEFAULT).Info("Request handled",
 		"model", llmReq.Model, "targetModel", llmReq.ResolvedTargetModel, "endpoint", targetPod)

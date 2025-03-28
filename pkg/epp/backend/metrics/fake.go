@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"sync"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/gateway-api-inference-extension/api/v1alpha2"
@@ -44,8 +43,8 @@ func (fpm *FakePodMetrics) GetPod() *Pod {
 func (fpm *FakePodMetrics) GetMetrics() *Metrics {
 	return fpm.Metrics
 }
-func (fpm *FakePodMetrics) UpdatePod(pod *corev1.Pod) {
-	fpm.Pod = toInternalPod(pod)
+func (fpm *FakePodMetrics) UpdatePodAddress(ip string) {
+	fpm.Pod.Address = ip
 }
 func (fpm *FakePodMetrics) StopRefreshLoop() {} // noop
 
