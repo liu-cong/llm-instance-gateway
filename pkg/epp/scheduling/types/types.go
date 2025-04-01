@@ -83,6 +83,7 @@ func (pm *PodMetrics) GetMetrics() *backendmetrics.Metrics {
 }
 
 type PodMetrics struct {
+	score float64
 	*backendmetrics.Pod
 	*backendmetrics.Metrics
 }
@@ -100,7 +101,7 @@ func NewContext(ctx context.Context, req *LLMRequest, pods []*PodMetrics) *Conte
 func ToSchedulerPodMetrics(pods []backendmetrics.PodMetrics) []*PodMetrics {
 	pm := make([]*PodMetrics, 0, len(pods))
 	for _, pod := range pods {
-		pm = append(pm, &PodMetrics{pod.GetPod().Clone(), pod.GetMetrics().Clone()})
+		pm = append(pm, &PodMetrics{Pod: pod.GetPod().Clone(), Metrics: pod.GetMetrics().Clone()})
 	}
 	return pm
 }
