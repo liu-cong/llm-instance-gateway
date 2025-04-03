@@ -120,6 +120,7 @@ func NewScheduler(datastore Datastore) *Scheduler {
 		datastore:              datastore,
 		criticalRequestFilter:  lowLatencyFilter,
 		sheddableRequestFilter: sheddableRequestFilter,
+		eventHandler:           &types.NoopEventHandler{},
 	}
 }
 
@@ -127,6 +128,7 @@ type Scheduler struct {
 	datastore              Datastore
 	criticalRequestFilter  Filter
 	sheddableRequestFilter Filter
+	eventHandler           types.EventHandler
 }
 
 type Datastore interface {
@@ -143,6 +145,8 @@ func (s *Scheduler) Schedule(ctx context.Context, req *types.LLMRequest) (target
 	sCtx := types.NewContext(ctx, req, types.ToSchedulerPodMetrics(s.datastore.PodGetAll()))
 	logger.V(logutil.DEBUG).Info(fmt.Sprintf("Scheduling a request. Metrics: %+v", sCtx.PodsSnapshot))
 
+	s.eventHandler.OnReceive(sCtx)
+
 	var filter Filter
 	if req.Critical {
 		filter = s.criticalRequestFilter
@@ -156,5 +160,6 @@ func (s *Scheduler) Schedule(ctx context.Context, req *types.LLMRequest) (target
 	}
 	logger.V(logutil.DEBUG).Info(fmt.Sprintf("Selecting a random pod from %d candidates: %+v", len(pods), pods))
 	i := rand.Intn(len(pods))
+	s.eventHandler.OnDispatch(sCtx, pods[i])
 	return pods[i], nil
 }

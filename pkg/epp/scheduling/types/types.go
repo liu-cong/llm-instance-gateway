@@ -25,11 +25,25 @@ import (
 	backendmetrics "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/backend/metrics"
 )
 
+type EventHandler interface {
+	// OnReceive is called when the scheduler receives a new request. It can be used for various
+	// initialization work.
+	OnReceive(ctx *Context)
+	// OnDispatch is called by the scheduler when it selects a targetPod for the request.
+	OnDispatch(ctx *Context, target *PodMetrics)
+}
+
+type NoopEventHandler struct{}
+
+func (h *NoopEventHandler) OnReceive(ctx *Context)                      {}
+func (h *NoopEventHandler) OnDispatch(ctx *Context, target *PodMetrics) {}
+
 // LLMRequest is a structured representation of the fields we parse out of the LLMRequest body.
 type LLMRequest struct {
 	Model string
 	// Target models is a map of target model name to weight.
 	TargetModels map[string]int
+	Prompt       string
 	// Resolved target model is the final target model after traffic split.
 	ResolvedTargetModel string
 	Critical            bool
@@ -41,7 +55,11 @@ type Context struct {
 	Logger       logr.Logger
 	Req          *LLMRequest
 	PodsSnapshot []*PodMetrics
+	Hashes       []BlockHash
 }
+
+// BlockHash is a hash of the block of request body.
+type BlockHash uint64
 
 type Pod interface {
 	GetPod() *backendmetrics.Pod

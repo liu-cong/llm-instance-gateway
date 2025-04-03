@@ -53,13 +53,17 @@ func (s *Server) HandleRequestBody(
 	}
 	loggerVerbose.Info("Request body unmarshalled", "body", rb)
 
+	prompt, ok := rb["prompt"].(string)
+	if !ok {
+		return nil, errutil.Error{Code: errutil.BadRequest, Msg: "prompt not found in request"}
+	}
 	// Resolve target models.
 	model, ok := rb["model"].(string)
 	if !ok {
 		return nil, errutil.Error{Code: errutil.BadRequest, Msg: "model not found in request"}
 	}
 	loggerVerbose.Info("Model requested", "model", model)
-	modelName := model
+	targetModel := model
 
 	// NOTE: The nil checking for the modelObject means that we DO allow passthrough currently.
 	// This might be a security risk in the future where adapters not registered in the InferenceModel
@@ -69,23 +73,17 @@ func (s *Server) HandleRequestBody(
 		return nil, errutil.Error{Code: errutil.BadConfiguration, Msg: fmt.Sprintf("error finding a model object in InferenceModel for input %v", model)}
 	}
 	if len(modelObj.Spec.TargetModels) > 0 {
-		modelName = RandomWeightedDraw(logger, modelObj, 0)
-		if modelName == "" {
+		targetModel = RandomWeightedDraw(logger, modelObj, 0)
+		if targetModel == "" {
 			return nil, errutil.Error{Code: errutil.BadConfiguration, Msg: fmt.Sprintf("error getting target model name for model %v", modelObj.Name)}
 		}
 	}
-	llmReq := &schedulingtypes.LLMRequest{
-		Model:               model,
-		ResolvedTargetModel: modelName,
-		Critical:            datastore.IsCritical(modelObj),
-	}
-	loggerVerbose.Info("LLM request assembled", "request", llmReq)
 
 	requestBody := v.RequestBody.Body
 	var err error
 	// Update target models in the body.
-	if llmReq.Model != llmReq.ResolvedTargetModel {
-		rb["model"] = llmReq.ResolvedTargetModel
+	if model != targetModel {
+		rb["model"] = targetModel
 		requestBody, err = json.Marshal(rb)
 		if err != nil {
 			logger.V(logutil.DEFAULT).Error(err, "Error marshaling request body")
@@ -93,7 +91,13 @@ func (s *Server) HandleRequestBody(
 		}
 		loggerVerbose.Info("Updated request body marshalled", "body", string(requestBody))
 	}
-
+	llmReq := &schedulingtypes.LLMRequest{
+		Model:               model,
+		ResolvedTargetModel: targetModel,
+		Prompt:              prompt,
+		Critical:            datastore.IsCritical(modelObj),
+	}
+	loggerVerbose.Info("LLM request assembled", "request", llmReq)
 	target, err := s.scheduler.Schedule(ctx, llmReq)
 	if err != nil {
 		return nil, errutil.Error{Code: errutil.InferencePoolResourceExhausted, Msg: fmt.Errorf("failed to find target pod: %w", err).Error()}

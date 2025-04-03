@@ -322,13 +322,17 @@ func (s *StreamingServer) HandleRequestBody(
 	var requestBodyBytes []byte
 	logger := log.FromContext(ctx)
 
+	prompt, ok := requestBodyMap["prompt"].(string)
+	if !ok {
+		return reqCtx, errutil.Error{Code: errutil.BadRequest, Msg: "prompt not found in request"}
+	}
 	// Resolve target models.
 	model, ok := requestBodyMap["model"].(string)
 	if !ok {
 		return reqCtx, errutil.Error{Code: errutil.BadRequest, Msg: "model not found in request"}
 	}
 
-	modelName := model
+	targetModel := model
 
 	// NOTE: The nil checking for the modelObject means that we DO allow passthrough currently.
 	// This might be a security risk in the future where adapters not registered in the InferenceModel
@@ -338,22 +342,16 @@ func (s *StreamingServer) HandleRequestBody(
 		return reqCtx, errutil.Error{Code: errutil.BadConfiguration, Msg: fmt.Sprintf("error finding a model object in InferenceModel for input %v", model)}
 	}
 	if len(modelObj.Spec.TargetModels) > 0 {
-		modelName = RandomWeightedDraw(logger, modelObj, 0)
-		if modelName == "" {
+		targetModel = RandomWeightedDraw(logger, modelObj, 0)
+		if targetModel == "" {
 			return reqCtx, errutil.Error{Code: errutil.BadConfiguration, Msg: fmt.Sprintf("error getting target model name for model %v", modelObj.Name)}
 		}
 	}
-	llmReq := &schedulingtypes.LLMRequest{
-		Model:               model,
-		ResolvedTargetModel: modelName,
-		Critical:            datastore.IsCritical(modelObj),
-	}
-	logger.V(logutil.DEBUG).Info("LLM request assembled", "model", llmReq.Model, "targetModel", llmReq.ResolvedTargetModel, "critical", llmReq.Critical)
 
 	var err error
 	// Update target models in the body.
-	if llmReq.Model != llmReq.ResolvedTargetModel {
-		requestBodyMap["model"] = llmReq.ResolvedTargetModel
+	if model != targetModel {
+		requestBodyMap["model"] = targetModel
 	}
 
 	requestBodyBytes, err = json.Marshal(requestBodyMap)
@@ -361,6 +359,14 @@ func (s *StreamingServer) HandleRequestBody(
 		logger.V(logutil.DEFAULT).Error(err, "Error marshaling request body")
 		return reqCtx, errutil.Error{Code: errutil.Internal, Msg: fmt.Sprintf("error marshaling request body: %v", err)}
 	}
+
+	llmReq := &schedulingtypes.LLMRequest{
+		Model:               model,
+		ResolvedTargetModel: targetModel,
+		Critical:            datastore.IsCritical(modelObj),
+		Prompt:              prompt,
+	}
+	logger.V(logutil.DEBUG).Info("LLM request assembled", "request", llmReq)
 
 	target, err := s.scheduler.Schedule(ctx, llmReq)
 	if err != nil {

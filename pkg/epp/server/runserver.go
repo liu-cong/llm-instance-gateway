@@ -149,10 +149,10 @@ func (r *ExtProcServerRunner) AsRunnable(logger logr.Logger) manager.Runnable {
 		var extProcServer extProcPb.ExternalProcessorServer
 		if r.UseStreaming {
 			logger.Info("Using streaming extproc server")
-			extProcServer = handlers.NewStreamingServer(scheduling.NewScheduler(r.Datastore), r.DestinationEndpointHintMetadataNamespace, r.DestinationEndpointHintKey, r.Datastore)
+			extProcServer = handlers.NewStreamingServer(scheduling.NewSchedulerV3(r.Datastore), r.DestinationEndpointHintMetadataNamespace, r.DestinationEndpointHintKey, r.Datastore)
 		} else {
 			logger.Info("Using standard extproc server")
-			extProcServer = handlers.NewServer(scheduling.NewScheduler(r.Datastore), r.DestinationEndpointHintMetadataNamespace, r.DestinationEndpointHintKey, r.Datastore)
+			extProcServer = handlers.NewServer(scheduling.NewSchedulerV3(r.Datastore), r.DestinationEndpointHintMetadataNamespace, r.DestinationEndpointHintKey, r.Datastore)
 		}
 		extProcPb.RegisterExternalProcessorServer(
 			srv,
