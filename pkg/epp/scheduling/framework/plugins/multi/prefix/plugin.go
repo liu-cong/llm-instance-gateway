@@ -55,6 +55,7 @@ const (
 	PrefixCachePluginType = "prefix-cache-scorer"
 )
 
+// TODO: Dynamically update the config based on metrics from the model server.
 var DefaultConfig = Config{
 	HashBlockSize:          DefaultHashBlockSize,
 	MaxPrefixBlocksToMatch: DefaultMaxPrefixBlocks,
@@ -215,6 +216,9 @@ func (m *Plugin) PostCycle(ctx context.Context, cycleState *types.CycleState, re
 	matchLen := state.PrefixCacheServers[ServerID(targetPod.NamespacedName)]
 	metrics.RecordPrefixCacheMatch(matchLen*m.HashBlockSize, total*m.HashBlockSize)
 }
+
+// TODO: Add a PostResponse hook to update the indexer based on the response text.
+// TODO: Also adjust the cache size based on: 1. total tokens in the request; 2. cache hit rate.
 
 // matchLongestPrefix returns a map of servers and length of prefix that each server caches.
 func (m *Plugin) matchLongestPrefix(ctx context.Context, hashes []BlockHash) map[ServerID]int {

@@ -14,27 +14,16 @@ spec:
     spec:
       containers:
         - name: vllm
-          image: "vllm/vllm-openai:latest"
+          image: "vllm/vllm-openai:v0.10.0"
           imagePullPolicy: Always
-          command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+          command: ["sh", "-c"]
           args:
-          - "--model"
-          - "meta-llama/Llama-3.1-8B-Instruct"
-          - "--tensor-parallel-size"
-          - "1"
-          - "--port"
-          - "8000"
-          - "--max-num-seq"
-          - "1024"
-          - "--compilation-config"
-          - "3"
-          - "--enable-lora"
-          - "--max-loras"
-          - "2"
-          - "--max-lora-rank"
-          - "8"
-          - "--max-cpu-loras"
-          - "12"
+          - |
+            export PATH="$PATH:/usr/local/nvidia/bin"
+            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+            exec vllm serve meta-llama/Llama-3.1-8B-Instruct \
+            --port "8000" \
+            --served-model- name meta-llama/Llama-3.1-8B-Instruct
           env:
             # Enabling LoRA support temporarily disables automatic v1, we want to force it on
             # until 0.8.3 vLLM is released.

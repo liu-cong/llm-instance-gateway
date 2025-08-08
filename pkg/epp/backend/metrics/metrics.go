@@ -143,6 +143,10 @@ func (p *PodMetricsClientImpl) promToPodMetrics(
 		}
 	}
 
+	// TODO: Handle cache config info metrics
+	updated.CacheConfigInfoBlockSize = 0
+	updated.CacheConfigInfoNumGPUBlocks = 0
+
 	return updated, errs
 }
 

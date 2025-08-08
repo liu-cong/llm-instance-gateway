@@ -41,6 +41,9 @@ type MetricsState struct {
 	KVCacheUsagePercent     float64
 	KvCacheMaxTokenCapacity int
 
+	CacheConfigInfoBlockSize    int
+	CacheConfigInfoNumGPUBlocks int
+
 	// UpdateTime record the last time when the metrics were updated.
 	UpdateTime time.Time
 }
